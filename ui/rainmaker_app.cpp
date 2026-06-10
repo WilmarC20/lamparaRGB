@@ -14,12 +14,7 @@
 #include "RMaker.h"
 #include "WiFi.h"
 #include "WiFiProv.h"
-#include <network_provisioning/manager.h>
-#if CONFIG_IDF_TARGET_ESP32
-#include <network_provisioning/scheme_ble.h>
-#else
-#include <network_provisioning/scheme_softap.h>
-#endif
+#include <esp_wifi.h>
 
 #define RM_PREFS_NS          "lamp_v3"
 #define RM_PREFS_KEY_PROV_UI "prov_ui"
@@ -294,32 +289,21 @@ bool rainmaker_app_setup_blocks_ui(void)
     return s_provOnly;
 }
 
+static bool rm_has_wifi_credentials(void)
+{
+    wifi_config_t cfg = {};
+    if (esp_wifi_get_config(WIFI_IF_STA, &cfg) != ESP_OK) {
+        return false;
+    }
+    return cfg.sta.ssid[0] != '\0';
+}
+
 static void rm_wifi_connect_if_provisioned(void)
 {
-    bool provisioned = false;
-    network_prov_mgr_config_t config = {};
-#if CONFIG_IDF_TARGET_ESP32
-    config.scheme = network_prov_scheme_ble;
-    network_prov_event_handler_t handler = NETWORK_PROV_SCHEME_BLE_EVENT_HANDLER_FREE_BTDM;
-#else
-    config.scheme = network_prov_scheme_softap;
-    network_prov_event_handler_t handler = NETWORK_PROV_EVENT_HANDLER_NONE;
-#endif
-    memcpy(&config.scheme_event_handler, &handler, sizeof(network_prov_event_handler_t));
-    config.app_event_handler.event_cb = NULL;
-    config.app_event_handler.user_data = NULL;
-
-    WiFi.STA.begin(false);
-    if (network_prov_mgr_init(config) != ESP_OK) {
-        LAMP_LOG_LN("RM: prov mgr init fallo");
-        return;
-    }
-    if (network_prov_mgr_is_wifi_provisioned(&provisioned) != ESP_OK || !provisioned) {
-        network_prov_mgr_deinit();
+    if (!rm_has_wifi_credentials()) {
         LAMP_LOG_LN("RM: sin WiFi guardado (prov desde Ajustes)");
         return;
     }
-    network_prov_mgr_deinit();
     WiFi.begin();
     LAMP_LOG_LN("RM: conectando WiFi guardado");
 }

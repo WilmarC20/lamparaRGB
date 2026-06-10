@@ -63,13 +63,19 @@ static const struct {
     { 280, 255, "V" },
 };
 
+static lv_color_t ui_color_from_hue_sat(uint16_t hue, uint8_t sat255)
+{
+    if (sat255 == 0) {
+        return lv_color_hex(0xE8E8F0);
+    }
+    const uint8_t sat100 = (uint8_t)((sat255 * 100U) / 255U);
+    return lv_color_hsv_to_rgb(hue, sat100, 100);
+}
+
 static void style_color_dot(lv_obj_t *dot, uint16_t hue, uint8_t sat)
 {
-    if (sat == 0) {
-        lv_obj_set_style_bg_color(dot, lv_color_hex(0xE8E8F0), LV_PART_MAIN);
-    } else {
-        lv_obj_set_style_bg_color(dot, lv_color_hsv_to_rgb(hue, sat, 100), LV_PART_MAIN);
-    }
+    lv_obj_set_style_bg_color(dot, ui_color_from_hue_sat(hue, sat), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(dot, LV_OPA_COVER, LV_PART_MAIN);
 }
 
 static lv_obj_t *make_preset_btn(lv_obj_t *parent, int idx)
@@ -121,8 +127,11 @@ static lv_obj_t *make_toggle_panel(lv_obj_t *parent, const char *icon, const cha
 
     lv_obj_t *lbl = lv_label_create(card);
     lv_label_set_text(lbl, text);
+    lv_obj_set_width(lbl, w - 22);
+    lv_label_set_long_mode(lbl, LV_LABEL_LONG_SCROLL_CIRCULAR);
+    lv_obj_set_style_anim_speed(lbl, 18, LV_PART_MAIN);
     lv_obj_set_style_text_color(lbl, lv_color_hex(UI_COLOR_TEXT), LV_PART_MAIN);
-    lv_obj_align(lbl, LV_ALIGN_TOP_LEFT, 0, 16);
+    lv_obj_align_to(lbl, ico, LV_ALIGN_OUT_RIGHT_MID, 2, 0);
 
     *outSwitch = lv_switch_create(card);
     lv_obj_set_size(*outSwitch, 42, 22);
@@ -549,12 +558,7 @@ void ui_update_speed_label(uint8_t pct)
 
 static void ui_apply_accent_color(uint16_t hue, uint8_t sat)
 {
-    lv_color_t accent;
-    if (sat == 0) {
-        accent = lv_color_hex(0xE8E8F0);
-    } else {
-        accent = lv_color_hsv_to_rgb(hue, sat, 100);
-    }
+    const lv_color_t accent = ui_color_from_hue_sat(hue, sat);
 
     if (ui_SliderBrillo) {
         lv_obj_set_style_bg_color(ui_SliderBrillo, accent, LV_PART_INDICATOR);

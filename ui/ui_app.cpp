@@ -743,7 +743,10 @@ static void on_preset_clicked(lv_event_t *e)
     appState.hue = presets[idx].h;
     appState.saturation = presets[idx].s;
     syncingUi = true;
-    lv_color_hsv_t hsv = { presets[idx].h, presets[idx].s, 100 };
+    lv_color_hsv_t hsv;
+    hsv.h = presets[idx].h;
+    hsv.s = (uint8_t)((presets[idx].s * 100U) / 255U);
+    hsv.v = 100;
     lv_colorwheel_set_hsv(ui_ColorWheel, hsv);
     syncingUi = false;
     ui_update_color_preview(appState.hue, appState.saturation);
