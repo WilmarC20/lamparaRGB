@@ -2,6 +2,7 @@
 #define UI_CONFIG_SCREEN_H
 
 #include "lvgl.h"
+#include "ui_control_screen.h"
 #include <stdbool.h>
 #include <stdint.h>
 
@@ -12,12 +13,13 @@ extern "C" {
 void ui_Config_screen_init(void);
 lv_obj_t *ui_settings_tab_build(lv_obj_t *parent);
 void ui_config_set_wifi_status(bool online);
+void ui_config_set_wifi_text(const char *text, bool online);
+void ui_config_set_wifi_state(ui_wifi_state_t state, const char *text);
 lv_obj_t *ui_config_get_brightness_slider(void);
+lv_obj_t *ui_config_get_mic_sensitivity_slider(void);
 void ui_config_set_status(const char *text, uint32_t color_hex);
-void ui_config_set_mic_test_active(bool active);
-void ui_config_update_mic_readings(int raw, int level, int span);
-void ui_config_set_led_calib_active(bool active);
-void ui_config_update_led_calib(uint16_t index, uint16_t total);
+void ui_config_set_mic_sensitivity_pct(uint8_t pct);
+void ui_config_update_mic_sensitivity_meter(int sound_level, int music_level);
 
 #ifdef __cplusplus
 }

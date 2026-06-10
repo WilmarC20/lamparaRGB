@@ -2,49 +2,63 @@
 #include "ui_control_screen.h"
 #include "ui_theme.h"
 #include "lampara_ui.h"
+#include "audio_input.h"
 #include "config.h"
-#include "led_layout.h"
 #include "lvgl.h"
 #include <stdio.h>
 
-#define MIC_BAR_MAX 800
+#define MIC_BAR_MAX 400
 #define FW_VERSION  "Lampara V3.0.1"
 
 static lv_obj_t *s_configStatusLbl = NULL;
-static lv_obj_t *s_micTestBtnLbl = NULL;
-static lv_obj_t *s_ledCalibBtnLbl = NULL;
 static lv_obj_t *s_wifiLbl = NULL;
+static lv_obj_t *s_wifiIcon = NULL;
 static lv_obj_t *s_settingsBrilloSlider = NULL;
 static lv_obj_t *s_settingsBrilloPct = NULL;
+static lv_obj_t *s_micSensSlider = NULL;
+static lv_obj_t *s_micSensPct = NULL;
+static lv_obj_t *s_micSensBar = NULL;
+static lv_obj_t *s_micSensLevelLbl = NULL;
 
-static lv_obj_t *make_settings_row(lv_obj_t *parent, const char *title, lv_obj_t **valueOut, int h)
+static lv_obj_t *make_settings_row(lv_obj_t *parent, const char *icon, uint32_t icon_color,
+                                    const char *title, lv_obj_t **valueOut, int h, bool chevron,
+                                    bool clickable)
 {
-    lv_obj_t *row = lv_btn_create(parent);
+    lv_obj_t *row = clickable ? lv_btn_create(parent) : lv_obj_create(parent);
     lv_obj_set_width(row, kScreenWidth - 16);
     lv_obj_set_height(row, h);
-    lv_obj_set_style_bg_color(row, lv_color_hex(UI_COLOR_CARD), LV_PART_MAIN);
-    lv_obj_set_style_radius(row, 8, LV_PART_MAIN);
-    lv_obj_set_style_border_color(row, lv_color_hex(UI_COLOR_CARD_BORDER), LV_PART_MAIN);
-    lv_obj_set_style_border_width(row, 1, LV_PART_MAIN);
+    ui_style_card(row);
+    lv_obj_set_style_shadow_width(row, 0, LV_PART_MAIN);
     lv_obj_set_style_pad_hor(row, 10, LV_PART_MAIN);
+    lv_obj_clear_flag(row, LV_OBJ_FLAG_SCROLLABLE);
+    if (!clickable) {
+        lv_obj_clear_flag(row, LV_OBJ_FLAG_CLICKABLE);
+    }
+
+    lv_obj_t *ico = lv_label_create(row);
+    lv_label_set_text(ico, icon);
+    lv_obj_set_style_text_color(ico, lv_color_hex(icon_color), LV_PART_MAIN);
+    lv_obj_align(ico, LV_ALIGN_LEFT_MID, 0, 0);
 
     lv_obj_t *lbl = lv_label_create(row);
     lv_label_set_text(lbl, title);
     lv_obj_set_style_text_color(lbl, lv_color_hex(UI_COLOR_TEXT), LV_PART_MAIN);
-    lv_obj_align(lbl, LV_ALIGN_LEFT_MID, 0, 0);
+    lv_obj_align_to(lbl, ico, LV_ALIGN_OUT_RIGHT_MID, 6, 0);
 
     lv_obj_t *val = lv_label_create(row);
     lv_label_set_text(val, "");
     lv_obj_set_style_text_color(val, lv_color_hex(UI_COLOR_TEXT_DIM), LV_PART_MAIN);
-    lv_obj_align(val, LV_ALIGN_RIGHT_MID, -14, 0);
-  if (valueOut) {
+    lv_obj_align(val, LV_ALIGN_RIGHT_MID, chevron ? -14 : -36, 0);
+    if (valueOut) {
         *valueOut = val;
     }
 
-    lv_obj_t *chev = lv_label_create(row);
-    lv_label_set_text(chev, LV_SYMBOL_RIGHT);
-    lv_obj_set_style_text_color(chev, lv_color_hex(0x555566), LV_PART_MAIN);
-    lv_obj_align(chev, LV_ALIGN_RIGHT_MID, 0, 0);
+    if (chevron) {
+        lv_obj_t *chev = lv_label_create(row);
+        lv_label_set_text(chev, LV_SYMBOL_RIGHT);
+        lv_obj_set_style_text_color(chev, lv_color_hex(0x666677), LV_PART_MAIN);
+        lv_obj_align(chev, LV_ALIGN_RIGHT_MID, 0, 0);
+    }
 
     return row;
 }
@@ -62,31 +76,43 @@ lv_obj_t *ui_settings_tab_build(lv_obj_t *parent)
     lv_obj_align(list, LV_ALIGN_TOP_MID, 0, 0);
     lv_obj_set_style_bg_opa(list, LV_OPA_TRANSP, LV_PART_MAIN);
     lv_obj_set_style_border_width(list, 0, LV_PART_MAIN);
-    lv_obj_set_style_pad_all(list, 6, LV_PART_MAIN);
-    lv_obj_set_style_pad_row(list, 5, LV_PART_MAIN);
+    lv_obj_set_style_pad_all(list, 8, LV_PART_MAIN);
+    lv_obj_set_style_pad_row(list, 4, LV_PART_MAIN);
     lv_obj_set_flex_flow(list, LV_FLEX_FLOW_COLUMN);
     lv_obj_add_flag(list, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_scrollbar_mode(list, LV_SCROLLBAR_MODE_AUTO);
 
-    lv_obj_t *wifiRow = make_settings_row(list, LV_SYMBOL_WIFI " WiFi", &s_wifiLbl, 34);
+    /* WiFi */
+    lv_obj_t *wifiRow = make_settings_row(list, LV_SYMBOL_WIFI, 0x666677, "WiFi",
+                                          &s_wifiLbl, 36, true, true);
+    s_wifiIcon = lv_obj_get_child(wifiRow, 0);
     lv_label_set_text(s_wifiLbl, "Sin conexion");
-    lv_obj_set_style_text_color(s_wifiLbl, lv_color_hex(0xFFAA44), LV_PART_MAIN);
 #if ENABLE_RAINMAKER
     ui_BtnStartProv = wifiRow;
 #else
     lv_obj_add_state(wifiRow, LV_STATE_DISABLED);
 #endif
 
+    /* Brillo global */
     lv_obj_t *brRow = lv_obj_create(list);
     lv_obj_set_width(brRow, kScreenWidth - 16);
-    lv_obj_set_height(brRow, 52);
+    lv_obj_set_height(brRow, 54);
     ui_style_card(brRow);
     lv_obj_clear_flag(brRow, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_clear_flag(brRow, LV_OBJ_FLAG_CLICKABLE);
+
+    lv_obj_t *sunIco = lv_obj_create(brRow);
+    lv_obj_set_size(sunIco, 14, 14);
+    lv_obj_set_style_radius(sunIco, LV_RADIUS_CIRCLE, LV_PART_MAIN);
+    lv_obj_set_style_bg_color(sunIco, lv_color_hex(0xFFCC33), LV_PART_MAIN);
+    lv_obj_set_style_border_width(sunIco, 0, LV_PART_MAIN);
+    lv_obj_align(sunIco, LV_ALIGN_TOP_LEFT, 0, 0);
+    lv_obj_clear_flag(sunIco, LV_OBJ_FLAG_CLICKABLE);
 
     lv_obj_t *brTitle = lv_label_create(brRow);
     lv_label_set_text(brTitle, "Brillo global");
     lv_obj_set_style_text_color(brTitle, lv_color_hex(UI_COLOR_TEXT), LV_PART_MAIN);
-    lv_obj_align(brTitle, LV_ALIGN_TOP_LEFT, 0, 0);
+    lv_obj_align_to(brTitle, sunIco, LV_ALIGN_OUT_RIGHT_MID, 6, 0);
 
     s_settingsBrilloPct = lv_label_create(brRow);
     lv_label_set_text(s_settingsBrilloPct, "50%");
@@ -101,71 +127,112 @@ lv_obj_t *ui_settings_tab_build(lv_obj_t *parent)
     lv_obj_align(s_settingsBrilloSlider, LV_ALIGN_BOTTOM_MID, 0, 0);
     ui_style_slider(s_settingsBrilloSlider);
 
-    lv_obj_t *timerRow = make_settings_row(list, LV_SYMBOL_BELL " Temporizador", NULL, 34);
-    lv_obj_t *timerVal = lv_obj_get_child(timerRow, 1);
+    /* Sensibilidad microfono */
+    lv_obj_t *micRow = lv_obj_create(list);
+    lv_obj_set_width(micRow, kScreenWidth - 16);
+    lv_obj_set_height(micRow, 68);
+    ui_style_card(micRow);
+    lv_obj_clear_flag(micRow, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_clear_flag(micRow, LV_OBJ_FLAG_CLICKABLE);
+
+    lv_obj_t *micIco = lv_label_create(micRow);
+    lv_label_set_text(micIco, LV_SYMBOL_AUDIO);
+    lv_obj_set_style_text_color(micIco, lv_color_hex(0x00CCCC), LV_PART_MAIN);
+    lv_obj_align(micIco, LV_ALIGN_TOP_LEFT, 0, 0);
+
+    lv_obj_t *micTitle = lv_label_create(micRow);
+    lv_label_set_text(micTitle, "Sensibilidad mic");
+    lv_obj_set_style_text_color(micTitle, lv_color_hex(UI_COLOR_TEXT), LV_PART_MAIN);
+    lv_obj_align_to(micTitle, micIco, LV_ALIGN_OUT_RIGHT_MID, 6, 0);
+
+    s_micSensLevelLbl = lv_label_create(micRow);
+    lv_label_set_text(s_micSensLevelLbl, "L 0");
+    lv_obj_set_style_text_color(s_micSensLevelLbl, lv_color_hex(UI_COLOR_TEXT_DIM), LV_PART_MAIN);
+    lv_obj_align(s_micSensLevelLbl, LV_ALIGN_TOP_RIGHT, 0, 0);
+
+    s_micSensPct = lv_label_create(micRow);
+    lv_label_set_text(s_micSensPct, "50%");
+    lv_obj_set_style_text_color(s_micSensPct, lv_color_hex(UI_COLOR_ACCENT), LV_PART_MAIN);
+    lv_obj_align(s_micSensPct, LV_ALIGN_TOP_RIGHT, 0, 16);
+
+    s_micSensSlider = lv_slider_create(micRow);
+    lv_slider_set_range(s_micSensSlider, 0, 100);
+    {
+        const uint8_t micPct =
+            audio_input_sensitivity_pct_from_silence(audio_input_get_silence_level());
+        lv_slider_set_value(s_micSensSlider, micPct, LV_ANIM_OFF);
+        if (s_micSensPct) {
+            char pctBuf[8];
+            snprintf(pctBuf, sizeof(pctBuf), "%u%%", micPct);
+            lv_label_set_text(s_micSensPct, pctBuf);
+        }
+    }
+    lv_obj_set_width(s_micSensSlider, kScreenWidth - 40);
+    lv_obj_set_pos(s_micSensSlider, 0, 24);
+    ui_style_slider(s_micSensSlider);
+    ui_MicSensSlider = s_micSensSlider;
+
+    s_micSensBar = lv_bar_create(micRow);
+    lv_bar_set_range(s_micSensBar, 0, MIC_BAR_MAX);
+    lv_bar_set_value(s_micSensBar, 0, LV_ANIM_OFF);
+    lv_obj_set_size(s_micSensBar, kScreenWidth - 40, 8);
+    lv_obj_align(s_micSensBar, LV_ALIGN_BOTTOM_MID, 0, 0);
+    lv_obj_set_style_bg_color(s_micSensBar, lv_color_hex(0x2A2A35), LV_PART_MAIN);
+    lv_obj_set_style_bg_color(s_micSensBar, lv_color_hex(0x00CCCC), LV_PART_INDICATOR);
+    ui_MicSensBar = s_micSensBar;
+
+    /* Temporizador */
+    lv_obj_t *timerRow = make_settings_row(list, LV_SYMBOL_BELL, UI_COLOR_TEXT_DIM,
+                                           "Temporizador", NULL, 36, true, false);
+    lv_obj_t *timerVal = lv_obj_get_child(timerRow, 2);
     if (timerVal) {
         lv_label_set_text(timerVal, "Desactivado");
     }
-    lv_obj_add_state(timerRow, LV_STATE_DISABLED);
 
-    lv_obj_t *nightRow = make_settings_row(list, LV_SYMBOL_EYE_CLOSE " Modo noche", NULL, 34);
-    lv_obj_t *nightVal = lv_obj_get_child(nightRow, 1);
-    if (nightVal) {
-        lv_label_set_text(nightVal, "22:00-07:00");
-    }
-    lv_obj_add_state(nightRow, LV_STATE_DISABLED);
+    /* Modo noche */
+    lv_obj_t *nightRow = lv_obj_create(list);
+    lv_obj_set_width(nightRow, kScreenWidth - 16);
+    lv_obj_set_height(nightRow, 36);
+    ui_style_card(nightRow);
+    lv_obj_clear_flag(nightRow, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_clear_flag(nightRow, LV_OBJ_FLAG_CLICKABLE);
 
-    ui_BtnMicTest = lv_btn_create(list);
-    lv_obj_set_width(ui_BtnMicTest, kScreenWidth - 16);
-    lv_obj_set_height(ui_BtnMicTest, 34);
-    lv_obj_set_style_bg_color(ui_BtnMicTest, lv_color_hex(UI_COLOR_CARD), LV_PART_MAIN);
-    lv_obj_set_style_radius(ui_BtnMicTest, 8, LV_PART_MAIN);
-    s_micTestBtnLbl = lv_label_create(ui_BtnMicTest);
-    lv_label_set_text(s_micTestBtnLbl, LV_SYMBOL_AUDIO " Probar microfono");
-    lv_obj_center(s_micTestBtnLbl);
+    lv_obj_t *nightIco = lv_label_create(nightRow);
+    lv_label_set_text(nightIco, LV_SYMBOL_EYE_CLOSE);
+    lv_obj_set_style_text_color(nightIco, lv_color_hex(UI_COLOR_TEXT_DIM), LV_PART_MAIN);
+    lv_obj_align(nightIco, LV_ALIGN_LEFT_MID, 0, 0);
 
-    ui_LabelMicTest = lv_label_create(list);
-    lv_label_set_text(ui_LabelMicTest, "Apagado");
-    lv_obj_set_style_text_color(ui_LabelMicTest, lv_color_hex(0x888888), LV_PART_MAIN);
+    lv_obj_t *nightLbl = lv_label_create(nightRow);
+    lv_label_set_text(nightLbl, "Modo noche");
+    lv_obj_set_style_text_color(nightLbl, lv_color_hex(UI_COLOR_TEXT), LV_PART_MAIN);
+    lv_obj_align(nightLbl, LV_ALIGN_LEFT_MID, 22, 0);
 
-    ui_BarMicTest = lv_bar_create(list);
-    lv_bar_set_range(ui_BarMicTest, 0, MIC_BAR_MAX);
-    lv_bar_set_value(ui_BarMicTest, 0, LV_ANIM_OFF);
-    lv_obj_set_size(ui_BarMicTest, kScreenWidth - 16, 12);
-    lv_obj_set_style_bg_color(ui_BarMicTest, lv_color_hex(0x222233), LV_PART_MAIN);
-    lv_obj_set_style_bg_color(ui_BarMicTest, lv_color_hex(0x00CC88), LV_PART_INDICATOR);
-    lv_obj_add_flag(ui_BarMicTest, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_t *nightVal = lv_label_create(nightRow);
+    lv_label_set_text(nightVal, "22:00 - 07:00");
+    lv_obj_set_style_text_color(nightVal, lv_color_hex(UI_COLOR_TEXT), LV_PART_MAIN);
+    lv_obj_align(nightVal, LV_ALIGN_RIGHT_MID, -40, 0);
 
-    ui_BtnLedCalib = lv_btn_create(list);
-    lv_obj_set_width(ui_BtnLedCalib, kScreenWidth - 16);
-    lv_obj_set_height(ui_BtnLedCalib, 34);
-    lv_obj_set_style_bg_color(ui_BtnLedCalib, lv_color_hex(UI_COLOR_CARD), LV_PART_MAIN);
-    lv_obj_set_style_radius(ui_BtnLedCalib, 8, LV_PART_MAIN);
-    s_ledCalibBtnLbl = lv_label_create(ui_BtnLedCalib);
-    lv_label_set_text(s_ledCalibBtnLbl, LV_SYMBOL_EYE_OPEN " Calibrar LEDs");
-    lv_obj_center(s_ledCalibBtnLbl);
+    lv_obj_t *nightSw = lv_switch_create(nightRow);
+    lv_obj_set_size(nightSw, 40, 22);
+    ui_style_switch(nightSw);
+    lv_obj_align(nightSw, LV_ALIGN_RIGHT_MID, 0, 0);
+    lv_obj_add_state(nightSw, LV_STATE_CHECKED);
+    lv_obj_add_state(nightSw, LV_STATE_DISABLED);
 
-    ui_LabelLedCalib = lv_label_create(list);
-    lv_label_set_text(ui_LabelLedCalib, "Apagado");
-    lv_obj_set_style_text_color(ui_LabelLedCalib, lv_color_hex(0x888888), LV_PART_MAIN);
-
-    lv_obj_t *infoRow = make_settings_row(list, LV_SYMBOL_LIST " Informacion", NULL, 34);
-    lv_obj_t *infoVal = lv_obj_get_child(infoRow, 1);
+    /* Informacion */
+    lv_obj_t *infoRow = make_settings_row(list, "i", UI_COLOR_TEXT_DIM,
+                                          "Informacion", NULL, 36, true, false);
+    lv_obj_t *infoVal = lv_obj_get_child(infoRow, 2);
     if (infoVal) {
         lv_label_set_text(infoVal, FW_VERSION);
-        lv_obj_set_style_text_color(infoVal, lv_color_hex(UI_COLOR_TEXT_DIM), LV_PART_MAIN);
     }
-    lv_obj_add_state(infoRow, LV_STATE_DISABLED);
 
 #if ENABLE_RAINMAKER
     s_configStatusLbl = lv_label_create(list);
     lv_label_set_text(s_configStatusLbl, "");
     lv_obj_set_style_text_color(s_configStatusLbl, lv_color_hex(0xFFAA44), LV_PART_MAIN);
     lv_obj_set_width(s_configStatusLbl, kScreenWidth - 16);
-#else
-    lv_obj_t *off = lv_label_create(list);
-    lv_label_set_text(off, "RainMaker desactivado");
-    lv_obj_set_style_text_color(off, lv_color_hex(0x888888), LV_PART_MAIN);
+    lv_obj_add_flag(s_configStatusLbl, LV_OBJ_FLAG_HIDDEN);
 #endif
 
     ui_BtnConfigBack = NULL;
@@ -175,19 +242,47 @@ lv_obj_t *ui_settings_tab_build(lv_obj_t *parent)
 
 void ui_Config_screen_init(void)
 {
-    /* Compatibilidad: la pestaña AJUSTES se crea en ui_Control_screen_init */
+}
+
+void ui_config_set_wifi_state(ui_wifi_state_t state, const char *text)
+{
+    if (!s_wifiLbl) {
+        return;
+    }
+
+    if (state == UI_WIFI_CONNECTED) {
+        if (text && text[0] != '\0') {
+            lv_label_set_text(s_wifiLbl, text);
+        } else {
+            lv_label_set_text(s_wifiLbl, "Conectado");
+        }
+        lv_obj_set_style_text_color(s_wifiLbl, lv_color_hex(UI_COLOR_OK), LV_PART_MAIN);
+        if (s_wifiIcon) {
+            lv_obj_set_style_text_color(s_wifiIcon, lv_color_hex(UI_COLOR_OK), LV_PART_MAIN);
+        }
+    } else if (state == UI_WIFI_CONNECTING) {
+        lv_label_set_text(s_wifiLbl, (text && text[0] != '\0') ? text : "Conectando...");
+        lv_obj_set_style_text_color(s_wifiLbl, lv_color_hex(0x4488FF), LV_PART_MAIN);
+        if (s_wifiIcon) {
+            lv_obj_set_style_text_color(s_wifiIcon, lv_color_hex(0x4488FF), LV_PART_MAIN);
+        }
+    } else {
+        lv_label_set_text(s_wifiLbl, (text && text[0] != '\0') ? text : "Sin conexion");
+        lv_obj_set_style_text_color(s_wifiLbl, lv_color_hex(UI_COLOR_TEXT_DIM), LV_PART_MAIN);
+        if (s_wifiIcon) {
+            lv_obj_set_style_text_color(s_wifiIcon, lv_color_hex(0x666677), LV_PART_MAIN);
+        }
+    }
+}
+
+void ui_config_set_wifi_text(const char *text, bool online)
+{
+    ui_config_set_wifi_state(online ? UI_WIFI_CONNECTED : UI_WIFI_DISCONNECTED, text);
 }
 
 void ui_config_set_wifi_status(bool online)
 {
-    if (!s_wifiLbl) return;
-    if (online) {
-        lv_label_set_text(s_wifiLbl, "Conectado");
-        lv_obj_set_style_text_color(s_wifiLbl, lv_color_hex(UI_COLOR_OK), LV_PART_MAIN);
-    } else {
-        lv_label_set_text(s_wifiLbl, "Sin conexion");
-        lv_obj_set_style_text_color(s_wifiLbl, lv_color_hex(0xFFAA44), LV_PART_MAIN);
-    }
+    ui_config_set_wifi_text(online ? NULL : "Sin conexion", online);
 }
 
 lv_obj_t *ui_config_get_brightness_slider(void)
@@ -195,97 +290,51 @@ lv_obj_t *ui_config_get_brightness_slider(void)
     return s_settingsBrilloSlider;
 }
 
+lv_obj_t *ui_config_get_mic_sensitivity_slider(void)
+{
+    return s_micSensSlider;
+}
+
 void ui_config_set_status(const char *text, uint32_t color_hex)
 {
     if (!s_configStatusLbl || !text) {
         return;
     }
+    if (text[0] == '\0') {
+        lv_obj_add_flag(s_configStatusLbl, LV_OBJ_FLAG_HIDDEN);
+        return;
+    }
     lv_label_set_text(s_configStatusLbl, text);
     lv_obj_set_style_text_color(s_configStatusLbl, lv_color_hex(color_hex), LV_PART_MAIN);
+    lv_obj_clear_flag(s_configStatusLbl, LV_OBJ_FLAG_HIDDEN);
     lv_obj_invalidate(s_configStatusLbl);
 }
 
-void ui_config_set_mic_test_active(bool active)
+void ui_config_set_mic_sensitivity_pct(uint8_t pct)
 {
-    if (!ui_BtnMicTest || !s_micTestBtnLbl) {
+    if (!s_micSensPct) {
         return;
     }
-    if (active) {
-        lv_label_set_text(s_micTestBtnLbl, LV_SYMBOL_STOP " Microfono ON");
-        lv_obj_set_style_bg_color(ui_BtnMicTest, lv_color_hex(UI_COLOR_ACCENT_DIM), LV_PART_MAIN);
-        if (ui_LabelMicTest) {
-            lv_label_set_text(ui_LabelMicTest, "L 0");
-            lv_obj_set_style_text_color(ui_LabelMicTest, lv_color_hex(UI_COLOR_OK), LV_PART_MAIN);
-        }
-        if (ui_BarMicTest) {
-            lv_bar_set_value(ui_BarMicTest, 0, LV_ANIM_OFF);
-            lv_obj_clear_flag(ui_BarMicTest, LV_OBJ_FLAG_HIDDEN);
-        }
-    } else {
-        lv_label_set_text(s_micTestBtnLbl, LV_SYMBOL_AUDIO " Probar microfono");
-        lv_obj_set_style_bg_color(ui_BtnMicTest, lv_color_hex(UI_COLOR_CARD), LV_PART_MAIN);
-        if (ui_LabelMicTest) {
-            lv_label_set_text(ui_LabelMicTest, "Apagado");
-            lv_obj_set_style_text_color(ui_LabelMicTest, lv_color_hex(0x888888), LV_PART_MAIN);
-        }
-        if (ui_BarMicTest) {
-            lv_bar_set_value(ui_BarMicTest, 0, LV_ANIM_OFF);
-            lv_obj_add_flag(ui_BarMicTest, LV_OBJ_FLAG_HIDDEN);
-        }
-    }
-    lv_obj_invalidate(ui_BtnMicTest);
+    char buf[8];
+    snprintf(buf, sizeof(buf), "%u%%", pct);
+    lv_label_set_text(s_micSensPct, buf);
 }
 
-void ui_config_update_mic_readings(int raw, int level, int span)
+void ui_config_update_mic_sensitivity_meter(int sound_level, int music_level)
 {
-    (void)raw;
-    (void)span;
-    if (ui_LabelMicTest) {
+    if (s_micSensLevelLbl) {
         char buf[16];
-        snprintf(buf, sizeof(buf), "L %d", level);
-        lv_label_set_text(ui_LabelMicTest, buf);
-        lv_obj_invalidate(ui_LabelMicTest);
+        snprintf(buf, sizeof(buf), "L %d", sound_level);
+        lv_label_set_text(s_micSensLevelLbl, buf);
     }
-    if (ui_BarMicTest) {
-        int barVal = level;
+    if (s_micSensBar) {
+        int barVal = music_level;
         if (barVal > MIC_BAR_MAX) {
             barVal = MIC_BAR_MAX;
         }
-        lv_bar_set_value(ui_BarMicTest, barVal, LV_ANIM_ON);
-    }
-}
-
-void ui_config_set_led_calib_active(bool active)
-{
-    if (!ui_BtnLedCalib || !s_ledCalibBtnLbl) {
-        return;
-    }
-    if (active) {
-        lv_label_set_text(s_ledCalibBtnLbl, LV_SYMBOL_STOP " Calibracion ON");
-        lv_obj_set_style_bg_color(ui_BtnLedCalib, lv_color_hex(0x2244AA), LV_PART_MAIN);
-        if (ui_LabelLedCalib) {
-            lv_obj_set_style_text_color(ui_LabelLedCalib, lv_color_hex(0x88AAFF), LV_PART_MAIN);
+        if (barVal < 0) {
+            barVal = 0;
         }
-    } else {
-        lv_label_set_text(s_ledCalibBtnLbl, LV_SYMBOL_EYE_OPEN " Calibrar LEDs");
-        lv_obj_set_style_bg_color(ui_BtnLedCalib, lv_color_hex(UI_COLOR_CARD), LV_PART_MAIN);
-        if (ui_LabelLedCalib) {
-            lv_label_set_text(ui_LabelLedCalib, "Apagado");
-            lv_obj_set_style_text_color(ui_LabelLedCalib, lv_color_hex(0x888888), LV_PART_MAIN);
-        }
+        lv_bar_set_value(s_micSensBar, barVal, LV_ANIM_OFF);
     }
-    lv_obj_invalidate(ui_BtnLedCalib);
-}
-
-void ui_config_update_led_calib(uint16_t index, uint16_t total)
-{
-    if (!ui_LabelLedCalib) {
-        return;
-    }
-    char buf[48];
-    const uint8_t lvl = led_level_of(index);
-    snprintf(buf, sizeof(buf), "LED %u/%u N%u Br+/-",
-             (unsigned)(index + 1U), (unsigned)total, (unsigned)(lvl + 1U));
-    lv_label_set_text(ui_LabelLedCalib, buf);
-    lv_obj_invalidate(ui_LabelLedCalib);
 }

@@ -14,7 +14,7 @@
 #include "RMaker.h"
 #include "WiFi.h"
 #include "WiFiProv.h"
-#include <esp_wifi.h>
+#include <network_provisioning/manager.h>
 
 #define RM_PREFS_NS          "lamp_v3"
 #define RM_PREFS_KEY_PROV_UI "prov_ui"
@@ -29,6 +29,7 @@ static Device *lampDevice = NULL;
 static volatile bool rmApplyPending = false;
 static bool s_initDone = false;
 static bool s_provOnly = false;
+static bool s_wifiProvisioned = false;
 
 static Param s_powerParam("Power", ESP_RMAKER_PARAM_POWER, value(true),
                           PROP_FLAG_READ | PROP_FLAG_WRITE);
@@ -219,8 +220,24 @@ void sysProvEvent3(arduino_event_t *event)
 #endif
             break;
 
+        case ARDUINO_EVENT_PROV_INIT:
+            WiFiProv.disableAutoStop(10000);
+            break;
+
+        case ARDUINO_EVENT_PROV_CRED_SUCCESS:
+            WiFiProv.endProvision();
+            break;
+
+        case ARDUINO_EVENT_WIFI_STA_GOT_IP:
+            LAMP_LOG_LN("RM: WiFi conectado");
+            break;
+
+        case ARDUINO_EVENT_WIFI_STA_DISCONNECTED:
+            LAMP_LOG_LN("RM: WiFi desconectado");
+            break;
+
         case ARDUINO_EVENT_WIFI_STA_CONNECTED:
-            Serial.println("WiFi conectado");
+            LAMP_LOG_LN("RM: WiFi asociado");
             break;
 
         default:
@@ -289,23 +306,41 @@ bool rainmaker_app_setup_blocks_ui(void)
     return s_provOnly;
 }
 
-static bool rm_has_wifi_credentials(void)
+static void rm_wifi_init_provision_manager(void)
 {
-    wifi_config_t cfg = {};
-    if (esp_wifi_get_config(WIFI_IF_STA, &cfg) != ESP_OK) {
-        return false;
-    }
-    return cfg.sta.ssid[0] != '\0';
+#if CONFIG_IDF_TARGET_ESP32
+    WiFiProv.initProvision(NETWORK_PROV_SCHEME_BLE, NETWORK_PROV_SCHEME_HANDLER_FREE_BTDM);
+#else
+    WiFiProv.initProvision(NETWORK_PROV_SCHEME_SOFTAP, NETWORK_PROV_SCHEME_HANDLER_NONE);
+#endif
 }
 
-static void rm_wifi_connect_if_provisioned(void)
+static bool rm_wifi_provisioned(void)
 {
-    if (!rm_has_wifi_credentials()) {
-        LAMP_LOG_LN("RM: sin WiFi guardado (prov desde Ajustes)");
-        return;
+    bool provisioned = false;
+    if (network_prov_mgr_is_wifi_provisioned(&provisioned) != ESP_OK) {
+        return false;
     }
-    WiFi.begin();
-    LAMP_LOG_LN("RM: conectando WiFi guardado");
+    return provisioned;
+}
+
+static void rm_wifi_begin(void)
+{
+#if CONFIG_IDF_TARGET_ESP32
+    WiFiProv.beginProvision(
+        NETWORK_PROV_SCHEME_BLE,
+        NETWORK_PROV_SCHEME_HANDLER_FREE_BTDM,
+        NETWORK_PROV_SECURITY_1,
+        pop,
+        service_name);
+#else
+    WiFiProv.beginProvision(
+        NETWORK_PROV_SCHEME_SOFTAP,
+        NETWORK_PROV_SCHEME_HANDLER_NONE,
+        NETWORK_PROV_SECURITY_1,
+        pop,
+        service_name);
+#endif
 }
 
 void rainmaker_app_setup(lamp_state_t *state)
@@ -321,27 +356,20 @@ void rainmaker_app_setup(lamp_state_t *state)
 
     RMaker.start();
 
+    RMaker.setTimeZone("America/Bogota");
+
     WiFi.onEvent(sysProvEvent3);
+    rm_wifi_init_provision_manager();
+    s_wifiProvisioned = rm_wifi_provisioned();
 
     if (s_provOnly) {
         LAMP_LOG_LN("RM: modo prov UI (BLE + QR)");
-#if CONFIG_IDF_TARGET_ESP32
-        WiFiProv.beginProvision(
-            NETWORK_PROV_SCHEME_BLE,
-            NETWORK_PROV_SCHEME_HANDLER_FREE_BTDM,
-            NETWORK_PROV_SECURITY_1,
-            pop,
-            service_name);
-#else
-        WiFiProv.beginProvision(
-            NETWORK_PROV_SCHEME_SOFTAP,
-            NETWORK_PROV_SCHEME_HANDLER_NONE,
-            NETWORK_PROV_SECURITY_1,
-            pop,
-            service_name);
-#endif
+        rm_wifi_begin();
+    } else if (rm_wifi_provisioned()) {
+        LAMP_LOG_LN("RM: conectando WiFi guardado");
+        rm_wifi_begin();
     } else {
-        rm_wifi_connect_if_provisioned();
+        LAMP_LOG_LN("RM: sin WiFi guardado (prov desde Ajustes)");
     }
 
     s_initDone = true;
@@ -438,6 +466,11 @@ void rainmaker_app_print_qr_serial(void)
 }
 
 void rainmaker_app_print_qr_serial_async(void) {}
+
+bool rainmaker_app_wifi_provisioned(void)
+{
+    return s_wifiProvisioned;
+}
 
 bool rainmaker_app_wifi_credentials_saved(void)
 {
@@ -581,6 +614,7 @@ void rainmaker_app_get_service_name(char *buf, size_t buf_len)
     if (buf && buf_len) buf[0] = '\0';
 }
 bool rainmaker_app_wifi_credentials_saved(void) { return false; }
+bool rainmaker_app_wifi_provisioned(void) { return false; }
 void rainmaker_app_on_ui_ready(void) {}
 void rainmaker_app_wifi_reset(void) {}
 

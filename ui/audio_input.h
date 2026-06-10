@@ -29,6 +29,10 @@ int audio_input_get_music_level(void);
 int audio_input_get_sound_span(void);
 /** Ultima lectura ADC cruda 0-4095. */
 int audio_input_get_raw_adc(void);
+void audio_input_set_silence_level(int level);
+int audio_input_get_silence_level(void);
+int audio_input_silence_from_sensitivity_pct(uint8_t pct);
+uint8_t audio_input_sensitivity_pct_from_silence(int silence);
 /** Modo prueba en tiempo de ejecucion (barra en pantalla Config). */
 void audio_input_set_test_mode(bool enable);
 bool audio_input_is_test_mode(void);

@@ -12,16 +12,13 @@ lv_obj_t *ui_SliderVelocidad;
 lv_obj_t *ui_SwitchFiesta;
 lv_obj_t *ui_SwitchPower;
 lv_obj_t *ui_LabelEstado;
-lv_obj_t *ui_BtnConfig;
+lv_obj_t *ui_LabelClock;
 lv_obj_t *ui_BtnConfigBack;
 lv_obj_t *ui_BtnWifiReset;
 lv_obj_t *ui_BtnStartProv;
 lv_obj_t *ui_BtnProvExit;
-lv_obj_t *ui_BtnMicTest;
-lv_obj_t *ui_LabelMicTest;
-lv_obj_t *ui_BarMicTest;
-lv_obj_t *ui_BtnLedCalib;
-lv_obj_t *ui_LabelLedCalib;
+lv_obj_t *ui_MicSensSlider;
+lv_obj_t *ui_MicSensBar;
 
 void ui_show_control_screen(void)
 {

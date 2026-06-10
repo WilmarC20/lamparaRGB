@@ -17,15 +17,12 @@ extern lv_obj_t *ui_SliderVelocidad;
 extern lv_obj_t *ui_SwitchFiesta;
 extern lv_obj_t *ui_SwitchPower;
 extern lv_obj_t *ui_LabelEstado;
-extern lv_obj_t *ui_BtnConfig;
+extern lv_obj_t *ui_LabelClock;
 extern lv_obj_t *ui_BtnConfigBack;
 extern lv_obj_t *ui_BtnStartProv;
 extern lv_obj_t *ui_BtnProvExit;
-extern lv_obj_t *ui_BtnMicTest;
-extern lv_obj_t *ui_LabelMicTest;
-extern lv_obj_t *ui_BarMicTest;
-extern lv_obj_t *ui_BtnLedCalib;
-extern lv_obj_t *ui_LabelLedCalib;
+extern lv_obj_t *ui_MicSensSlider;
+extern lv_obj_t *ui_MicSensBar;
 
 void ui_init(void);
 void ui_init_prov_only(void);

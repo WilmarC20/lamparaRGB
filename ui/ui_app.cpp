@@ -12,6 +12,9 @@
 #include "led_layout.h"
 #include "pins.h"
 #include "rainmaker_app.h"
+#if ENABLE_RAINMAKER
+#include <WiFi.h>
+#endif
 #include "lampara_ui.h"
 #include "ui_config_screen.h"
 #include "ui_control_screen.h"
@@ -23,6 +26,7 @@
 #include <lvgl.h>
 #include <Arduino.h>
 #include <string.h>
+#include <time.h>
 
 static lamp_state_t appState;
 static bool syncingUi = false;
@@ -93,15 +97,19 @@ static void ui_app_graphics_tick(void)
 
 static bool audioStarted = false;
 static uint32_t audioStartMs = 0;
-static bool micTestActive = false;
 static bool ledCalibActive = false;
 static uint8_t savedBrightness = 128;
+static bool s_ntpStarted = false;
 
-static void set_mic_test_active(bool active);
 static void set_led_calib_active(bool active);
+static void ui_app_ensure_settings_audio(void);
 static void ui_app_led_calib_sync_slider(void);
 static void ui_app_led_calib_refresh_ui(void);
 static void apply_and_report(void);
+static void update_status_label(void);
+static void ui_app_start_ntp(void);
+static void ui_app_update_wifi_display(void);
+static void ui_app_update_header_clock(void);
 static void on_brightness_changed(lv_event_t *e);
 
 lamp_state_t *ui_app_get_state(void)
@@ -110,29 +118,59 @@ lamp_state_t *ui_app_get_state(void)
 }
 
 #if ENABLE_RAINMAKER
-bool ui_app_allow_ble_provision(void)
+static void ui_app_start_ntp(void)
 {
-    if (onProvScreen) {
-        return provLoadPhase == PROV_LOAD_BLE || provLoadPhase == PROV_LOAD_DONE;
+    if (s_ntpStarted || WiFi.status() != WL_CONNECTED) {
+        return;
     }
-    if (onConfigScreen) return true;
-    return true;
+    configTime(-5 * 3600, 0, "pool.ntp.org", "time.nist.gov");
+    s_ntpStarted = true;
+}
+
+static void ui_app_update_wifi_display(void)
+{
+    ui_wifi_state_t state = UI_WIFI_DISCONNECTED;
+    const char *ssid = NULL;
+
+    if (WiFi.status() == WL_CONNECTED) {
+        state = UI_WIFI_CONNECTED;
+        ssid = WiFi.SSID().c_str();
+        ui_config_set_wifi_state(state, ssid);
+        ui_app_start_ntp();
+    } else if (rainmaker_app_wifi_provisioned()) {
+        state = UI_WIFI_CONNECTING;
+        ui_config_set_wifi_state(state, "Conectando...");
+    } else {
+        ui_config_set_wifi_state(UI_WIFI_DISCONNECTED, "Sin conexion");
+    }
+    ui_update_wifi_status(state, ssid);
+}
+#endif
+
+static void ui_app_update_header_clock(void)
+{
+    static uint32_t lastMs = 0;
+    const uint32_t now = millis();
+    if ((now - lastMs) < 1000U) {
+        return;
+    }
+    lastMs = now;
+
+    struct tm timeinfo;
+#if ENABLE_RAINMAKER
+    if (WiFi.status() == WL_CONNECTED && getLocalTime(&timeinfo, 0)) {
+        char buf[8];
+        snprintf(buf, sizeof(buf), "%02d:%02d", timeinfo.tm_hour, timeinfo.tm_min);
+        ui_update_header_clock(buf);
+        return;
+    }
+#endif
+    ui_update_header_clock("--:--");
 }
 
 static void update_status_label(void)
 {
-#if ENABLE_RAINMAKER
-    const bool online = rainmaker_app_is_online();
-    ui_update_wifi_icon(online);
-    ui_config_set_wifi_status(online);
-#else
-    ui_update_wifi_icon(false);
-    ui_config_set_wifi_status(false);
-#endif
-
-    if (!ui_LabelEstado) return;
-
-    if (led_calib_is_active()) {
+    if (ui_LabelEstado && led_calib_is_active()) {
         char buf[48];
         snprintf(buf, sizeof(buf), "LED %u/%u N%u",
                  (unsigned)(led_calib_get_index() + 1U),
@@ -144,7 +182,22 @@ static void update_status_label(void)
         return;
     }
 
-    lv_obj_add_flag(ui_LabelEstado, LV_OBJ_FLAG_HIDDEN);
+#if ENABLE_RAINMAKER
+    ui_app_update_wifi_display();
+#else
+    ui_update_wifi_status(UI_WIFI_DISCONNECTED, NULL);
+    ui_config_set_wifi_status(false);
+#endif
+}
+
+#if ENABLE_RAINMAKER
+bool ui_app_allow_ble_provision(void)
+{
+    if (onProvScreen) {
+        return provLoadPhase == PROV_LOAD_BLE || provLoadPhase == PROV_LOAD_DONE;
+    }
+    if (onConfigScreen) return true;
+    return true;
 }
 
 static void update_prov_status(void)
@@ -338,6 +391,7 @@ static void open_config_screen(void)
     LAMP_LOG_LN("CFG: menu RainMaker");
     ui_show_config_screen();
     bind_config_events();
+    ui_app_ensure_settings_audio();
     for (int i = 0; i < 6; i++) {
         lv_timer_handler();
         delay(5);
@@ -421,32 +475,49 @@ static void ui_app_led_calib_sync_slider(void)
 
 static uint16_t ui_speed_pct_to_hw(uint8_t pct)
 {
-    return (uint16_t)(10 + ((uint32_t)pct * 990U) / 100U);
+    const uint8_t inv = (uint8_t)(100U - pct);
+    return (uint16_t)(10 + ((uint32_t)inv * 990U) / 100U);
 }
 
 static uint8_t ui_speed_hw_to_pct(uint16_t speed)
 {
-    if (speed <= 10) return 0;
-    return (uint8_t)(((uint32_t)(speed - 10) * 100U) / 990U);
+    if (speed <= 10) return 100;
+    const uint8_t inv = (uint8_t)(((uint32_t)(speed - 10) * 100U) / 990U);
+    return (uint8_t)(100U - inv);
+}
+
+static void ui_app_sync_effect_color_bar(void)
+{
+    const uint16_t idx = ui_effect_dropdown_index(&appState);
+    ui_update_effect_color_bar(idx, appState.hue, appState.saturation);
 }
 
 static void ui_app_led_calib_refresh_ui(void)
 {
-    ui_config_update_led_calib(led_calib_get_index(), led_calib_get_count());
     ui_app_led_calib_sync_slider();
     update_status_label();
 }
 
+static void ui_app_ensure_settings_audio(void)
+{
+#if ENABLE_RAINMAKER
+    if (onProvScreen || rainmaker_app_provisioning_active()) {
+        return;
+    }
+#endif
+    if (audio_input_is_running()) {
+        return;
+    }
+    audioStarted = true;
+    audio_input_start();
+}
+
 static void set_led_calib_active(bool active)
 {
-    if (active && micTestActive) {
-        set_mic_test_active(false);
-    }
     if (active == ledCalibActive) {
         return;
     }
     ledCalibActive = active;
-    ui_config_set_led_calib_active(active);
     if (active) {
         savedBrightness = appState.brightness;
         appState.musicFx = MUSIC_FX_NONE;
@@ -463,43 +534,14 @@ static void set_led_calib_active(bool active)
     }
 }
 
-static void set_mic_test_active(bool active)
+static void on_mic_sens_changed(lv_event_t *e)
 {
-    if (active && ledCalibActive) {
-        set_led_calib_active(false);
+    if (syncingUi || lv_event_get_code(e) != LV_EVENT_VALUE_CHANGED) {
+        return;
     }
-    micTestActive = active;
-    audio_input_set_test_mode(active);
-    ui_config_set_mic_test_active(active);
-    if (active) {
-        if (!audio_input_is_running()) {
-            audioStarted = true;
-            audio_input_start();
-        }
-    } else if (!lamp_state_music_active(&appState) && audio_input_is_running()) {
-        audio_input_stop();
-        audioStarted = false;
-    }
-    update_status_label();
-}
-
-static void on_mic_test_btn(lv_event_t *e)
-{
-    if (lv_event_get_code(e) != LV_EVENT_CLICKED) return;
-    set_mic_test_active(!micTestActive);
-}
-
-static void on_led_calib_btn(lv_event_t *e)
-{
-    if (lv_event_get_code(e) != LV_EVENT_CLICKED) return;
-    set_led_calib_active(!ledCalibActive);
-}
-
-static void on_config_btn(lv_event_t *e)
-{
-    if (lv_event_get_code(e) != LV_EVENT_CLICKED) return;
-    onConfigScreen = true;
-    ui_set_active_tab(2);
+    const uint8_t pct = (uint8_t)lv_slider_get_value((lv_obj_t *)lv_event_get_target(e));
+    audio_input_set_silence_level(audio_input_silence_from_sensitivity_pct(pct));
+    ui_config_set_mic_sensitivity_pct(pct);
 }
 
 static void on_start_prov(lv_event_t *e)
@@ -533,20 +575,13 @@ static void bind_config_events(void)
         lv_obj_add_event_cb(ui_BtnStartProv, on_start_prov, LV_EVENT_CLICKED, NULL);
     }
 #endif
-    if (ui_BtnMicTest) {
-        lv_obj_add_event_cb(ui_BtnMicTest, on_mic_test_btn, LV_EVENT_CLICKED, NULL);
-        ui_config_set_mic_test_active(micTestActive);
-    }
-    if (ui_BtnLedCalib) {
-        lv_obj_add_event_cb(ui_BtnLedCalib, on_led_calib_btn, LV_EVENT_CLICKED, NULL);
-        ui_config_set_led_calib_active(ledCalibActive);
-        if (ledCalibActive) {
-            ui_config_update_led_calib(led_calib_get_index(), led_calib_get_count());
-        }
-    }
     lv_obj_t *cfgSlider = ui_config_get_brightness_slider();
     if (cfgSlider) {
         lv_obj_add_event_cb(cfgSlider, on_brightness_changed, LV_EVENT_VALUE_CHANGED, NULL);
+    }
+    lv_obj_t *micSensSlider = ui_config_get_mic_sensitivity_slider();
+    if (micSensSlider) {
+        lv_obj_add_event_cb(micSensSlider, on_mic_sens_changed, LV_EVENT_VALUE_CHANGED, NULL);
     }
 }
 
@@ -567,20 +602,6 @@ static void bind_prov_events(void)
 bool ui_app_allow_ble_provision(void)
 {
     return true;
-}
-
-static void update_status_label(void)
-{
-    ui_update_wifi_icon(false);
-    ui_config_set_wifi_status(false);
-    if (!ui_LabelEstado) return;
-    lv_obj_add_flag(ui_LabelEstado, LV_OBJ_FLAG_HIDDEN);
-}
-
-static void on_config_btn(lv_event_t *e)
-{
-    if (lv_event_get_code(e) != LV_EVENT_CLICKED) return;
-    ui_set_active_tab(2);
 }
 
 #endif
@@ -672,6 +693,7 @@ void ui_app_sync_from_state(void)
         ui_update_speed_label(pct);
     }
     ui_update_direction_buttons(led_controller_get_reverse());
+    ui_app_sync_effect_color_bar();
     update_status_label();
     syncingUi = false;
 }
@@ -683,6 +705,7 @@ static void on_color_changed(lv_event_t *e)
     appState.hue = hsv.h;
     appState.saturation = (uint8_t)((hsv.s * 255) / 100);
     ui_update_color_preview(appState.hue, appState.saturation);
+    ui_app_sync_effect_color_bar();
     lamp_state_mark_dirty(&appState);
     apply_and_report();
 }
@@ -708,8 +731,52 @@ static void on_effect_btn_clicked(lv_event_t *e)
     const uint16_t idx = (uint16_t)(intptr_t)lv_event_get_user_data(e);
     ui_effect_apply_dropdown_index(&appState, idx);
     ui_highlight_effect(idx);
+    ui_app_sync_effect_color_bar();
     lamp_state_mark_dirty(&appState);
     ui_app_notify_state_changed();
+}
+
+static void on_effect_color_clicked(lv_event_t *e)
+{
+    if (syncingUi || lv_event_get_code(e) != LV_EVENT_CLICKED) return;
+
+    const uint16_t idx = ui_effect_dropdown_index(&appState);
+    if (ui_effect_color_mode(idx) == UI_FX_COLOR_RAINBOW) {
+        return;
+    }
+
+    lv_obj_t *bar = (lv_obj_t *)lv_event_get_target(e);
+    lv_indev_t *indev = lv_indev_get_act();
+    if (!bar || !indev) {
+        return;
+    }
+
+    lv_point_t point;
+    lv_indev_get_point(indev, &point);
+    lv_area_t coords;
+    lv_obj_get_coords(bar, &coords);
+    const int16_t rel_x = (int16_t)(point.x - coords.x1);
+    const int16_t bar_w = (int16_t)lv_obj_get_width(bar);
+
+    appState.hue = ui_effect_hue_from_bar_x(rel_x, bar_w);
+    if (appState.saturation == 0) {
+        appState.saturation = 255;
+    }
+
+    syncingUi = true;
+    if (ui_ColorWheel) {
+        lv_color_hsv_t hsv;
+        hsv.h = appState.hue;
+        hsv.s = (uint8_t)((appState.saturation * 100U) / 255U);
+        hsv.v = 100;
+        lv_colorwheel_set_hsv(ui_ColorWheel, hsv);
+    }
+    syncingUi = false;
+
+    ui_update_color_preview(appState.hue, appState.saturation);
+    ui_app_sync_effect_color_bar();
+    lamp_state_mark_dirty(&appState);
+    apply_and_report();
 }
 
 static void on_speed_changed(lv_event_t *e)
@@ -750,6 +817,7 @@ static void on_preset_clicked(lv_event_t *e)
     lv_colorwheel_set_hsv(ui_ColorWheel, hsv);
     syncingUi = false;
     ui_update_color_preview(appState.hue, appState.saturation);
+    ui_app_sync_effect_color_bar();
     lamp_state_mark_dirty(&appState);
     apply_and_report();
 }
@@ -762,6 +830,12 @@ static void on_tab_nav_clicked(lv_event_t *e)
     ui_set_active_tab(tab);
     if (tab == 1) {
         ui_highlight_effect(ui_effect_dropdown_index(&appState));
+        ui_app_sync_effect_color_bar();
+    } else if (tab == 2) {
+        ui_app_ensure_settings_audio();
+    } else if (!lamp_state_music_active(&appState) && audio_input_is_running()) {
+        audio_input_stop();
+        audioStarted = false;
     }
 }
 
@@ -795,7 +869,6 @@ static void bind_control_events(void)
     lv_obj_add_event_cb(ui_SliderBrillo, on_brightness_changed, LV_EVENT_VALUE_CHANGED, NULL);
     lv_obj_add_event_cb(ui_SwitchFiesta, on_party_changed, LV_EVENT_VALUE_CHANGED, NULL);
     lv_obj_add_event_cb(ui_SwitchPower, on_power_changed, LV_EVENT_VALUE_CHANGED, NULL);
-    if (ui_BtnConfig) lv_obj_add_event_cb(ui_BtnConfig, on_config_btn, LV_EVENT_CLICKED, NULL);
 }
 
 void ui_app_setup(void)
@@ -822,10 +895,6 @@ void ui_app_setup(void)
     }
 #endif
 
-    led_controller_init();
-    LAMP_LOG("LED OK heap=%u\n", ESP.getFreeHeap());
-    Serial.flush();
-
     lv_init();
     display_init();
     LAMP_LOG("Display OK heap=%u\n", ESP.getFreeHeap());
@@ -833,6 +902,7 @@ void ui_app_setup(void)
     touch_cst820_init();
     touch_cst820_register_indev();
 
+    ui_control_register_effect_color_cb(on_effect_color_clicked);
     ui_control_register_callbacks(on_effect_btn_clicked,
                                   on_preset_clicked,
                                   on_tab_nav_clicked,
@@ -852,6 +922,11 @@ void ui_app_setup(void)
         delay(10);
     }
     LAMP_LOG("UI lista heap=%u\n", ESP.getFreeHeap());
+    Serial.flush();
+
+    led_controller_init();
+    LAMP_LOG("LED OK heap=%u\n", ESP.getFreeHeap());
+    Serial.flush();
 
     apply_and_report();
 #if ENABLE_RAINMAKER
@@ -947,6 +1022,16 @@ void ui_app_loop(void)
 
     lv_timer_handler();
 
+    ui_app_update_header_clock();
+    {
+        static uint32_t s_lastWifiUiMs = 0;
+        const uint32_t nowMs = millis();
+        if ((nowMs - s_lastWifiUiMs) >= 400U) {
+            s_lastWifiUiMs = nowMs;
+            update_status_label();
+        }
+    }
+
     if (!led_calib_is_active()) {
         if (appState.dirty) {
             led_controller_apply(&appState);
@@ -961,14 +1046,13 @@ void ui_app_loop(void)
 
     ir_control_service();
 
-    if (micTestActive && audio_input_is_test_mode() && onConfigScreen) {
+    if (onConfigScreen && audio_input_is_running()) {
         static uint32_t s_lastMicUiMs = 0;
         const uint32_t now = millis();
         if ((now - s_lastMicUiMs) >= 80U) {
             s_lastMicUiMs = now;
-            ui_config_update_mic_readings(audio_input_get_raw_adc(),
-                                          audio_input_get_sound_level(),
-                                          audio_input_get_sound_span());
+            ui_config_update_mic_sensitivity_meter(audio_input_get_sound_level(),
+                                                   audio_input_get_music_level());
         }
     }
 
@@ -981,9 +1065,6 @@ void ui_app_loop(void)
     }
 #endif
     if (rainmakerStarted && rainmaker_app_provisioning_active() && audio_input_is_running()) {
-        if (micTestActive) {
-            set_mic_test_active(false);
-        }
         audio_input_stop();
         audioStarted = false;
     }

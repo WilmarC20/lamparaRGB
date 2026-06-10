@@ -44,6 +44,7 @@ bool rainmaker_app_get_qr_payload(char *buf, size_t buf_len);
 void rainmaker_app_get_service_name(char *buf, size_t buf_len);
 bool rainmaker_app_setup_blocks_ui(void);
 bool rainmaker_app_wifi_credentials_saved(void);
+bool rainmaker_app_wifi_provisioned(void);
 void rainmaker_app_on_ui_ready(void);
 void rainmaker_app_wifi_reset(void);
 

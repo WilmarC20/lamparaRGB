@@ -28,10 +28,12 @@ static volatile int s_soundSpan = 0;
 static volatile int s_rawAdc = 0;
 static volatile int s_dcOffset = 2048;
 static bool s_testMode = false;
+static int s_micThreshold = AUDIO_MIC_THRESHOLD;
+static int s_silenceLevel = AUDIO_SILENCE_LEVEL;
 
 static int level_from_abs(int acAbs)
 {
-    int level = acAbs - AUDIO_MIC_THRESHOLD;
+    int level = acAbs - s_micThreshold;
     if (level < 0) level = 0;
     return (level * 3) / 2;
 }
@@ -180,7 +182,7 @@ int audio_input_get_sound_level(void)
 
 int audio_input_get_music_level(void)
 {
-    int level = s_soundLevel - AUDIO_SILENCE_LEVEL;
+    int level = s_soundLevel - s_silenceLevel;
     if (level < 0) {
         level = 0;
     }
@@ -195,4 +197,36 @@ int audio_input_get_sound_span(void)
 int audio_input_get_raw_adc(void)
 {
     return s_rawAdc;
+}
+
+void audio_input_set_silence_level(int level)
+{
+    if (level < 0) {
+        level = 0;
+    }
+    if (level > 400) {
+        level = 400;
+    }
+    s_silenceLevel = level;
+}
+
+int audio_input_get_silence_level(void)
+{
+    return s_silenceLevel;
+}
+
+int audio_input_silence_from_sensitivity_pct(uint8_t pct)
+{
+    return 350 - ((int)pct * 300 / 100);
+}
+
+uint8_t audio_input_sensitivity_pct_from_silence(int silence)
+{
+    if (silence <= 50) {
+        return 100;
+    }
+    if (silence >= 350) {
+        return 0;
+    }
+    return (uint8_t)((350 - silence) * 100 / 300);
 }
