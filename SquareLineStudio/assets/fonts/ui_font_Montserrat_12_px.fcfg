@@ -1,0 +1,16 @@
+{
+  "codename": "Montserrat_12_px",
+  "ttf_path": "/assets/fonts/Montserrat-Bold.ttf",
+  "bin_path": "/assets/fonts\\ui_font_Montserrat_12_px.bin",
+  "c_path": "/assets/fonts\\ui_font_Montserrat_12_px.c",
+  "cfg_path": "/assets/fonts\\ui_font_Montserrat_12_px.fcfg",
+  "size": 12,
+  "bpp": 1,
+  "letters": 0,
+  "ranges": [
+    "0x20-0x7f"
+  ],
+  "symbols": "",
+  "customparams": "--no-compress --no-prefilter",
+  "uploaded": false
+}

@@ -1,0 +1,64 @@
+#include "lampara_ui.h"
+#include "ui_control_screen.h"
+#include "ui_prov_screen.h"
+
+lv_obj_t *ui_Control;
+lv_obj_t *ui_Config;
+lv_obj_t *ui_Prov;
+lv_obj_t *ui_ColorWheel;
+lv_obj_t *ui_SliderBrillo;
+lv_obj_t *ui_DropdownEfectos;
+lv_obj_t *ui_SliderVelocidad;
+lv_obj_t *ui_SwitchFiesta;
+lv_obj_t *ui_SwitchPower;
+lv_obj_t *ui_LabelEstado;
+lv_obj_t *ui_BtnConfig;
+lv_obj_t *ui_BtnConfigBack;
+lv_obj_t *ui_BtnWifiReset;
+lv_obj_t *ui_BtnStartProv;
+lv_obj_t *ui_BtnProvExit;
+lv_obj_t *ui_BtnMicTest;
+lv_obj_t *ui_LabelMicTest;
+lv_obj_t *ui_BarMicTest;
+lv_obj_t *ui_BtnLedCalib;
+lv_obj_t *ui_LabelLedCalib;
+
+void ui_show_control_screen(void)
+{
+    if (ui_Control) {
+        lv_disp_load_scr(ui_Control);
+        lv_obj_invalidate(ui_Control);
+    }
+}
+
+void ui_show_config_screen(void)
+{
+    if (ui_Control) {
+        lv_disp_load_scr(ui_Control);
+        ui_set_active_tab(2);
+        lv_obj_invalidate(ui_Control);
+    }
+}
+
+void ui_show_prov_screen(void)
+{
+    if (!ui_Prov) {
+        ui_Prov_screen_init();
+    }
+    if (ui_Prov) {
+        lv_disp_load_scr(ui_Prov);
+        lv_obj_invalidate(ui_Prov);
+    }
+}
+
+void ui_init(void)
+{
+    ui_Control_screen_init();
+    ui_show_control_screen();
+}
+
+void ui_init_prov_only(void)
+{
+    ui_Prov_screen_init();
+    ui_show_prov_screen();
+}

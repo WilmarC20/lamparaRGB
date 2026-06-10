@@ -1,0 +1,16 @@
+# Arduino / ESP32 build artifacts
+build/
+*.o
+*.elf
+*.bin
+*.hex
+*.map
+
+# IDE / OS
+.vscode/
+*.code-workspace
+.DS_Store
+Thumbs.db
+
+# Secrets (override locally if needed)
+# ui/config.local.h
