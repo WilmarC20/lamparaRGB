@@ -1,4 +1,5 @@
 #include "ui_config_screen.h"
+#include "ui_settings.h"
 #include "ui_control_screen.h"
 #include "ui_theme.h"
 #include "lampara_ui.h"
@@ -19,6 +20,9 @@ static lv_obj_t *s_micSensSlider = NULL;
 static lv_obj_t *s_micSensPct = NULL;
 static lv_obj_t *s_micSensBar = NULL;
 static lv_obj_t *s_micSensLevelLbl = NULL;
+static lv_obj_t *s_timerRow = NULL;
+static lv_obj_t *s_timerVal = NULL;
+static lv_obj_t *s_nightSw = NULL;
 
 static lv_obj_t *make_settings_row(lv_obj_t *parent, const char *icon, uint32_t icon_color,
                                     const char *title, lv_obj_t **valueOut, int h, bool chevron,
@@ -182,12 +186,9 @@ lv_obj_t *ui_settings_tab_build(lv_obj_t *parent)
     ui_MicSensBar = s_micSensBar;
 
     /* Temporizador */
-    lv_obj_t *timerRow = make_settings_row(list, LV_SYMBOL_BELL, UI_COLOR_TEXT_DIM,
-                                           "Temporizador", NULL, 36, true, false);
-    lv_obj_t *timerVal = lv_obj_get_child(timerRow, 2);
-    if (timerVal) {
-        lv_label_set_text(timerVal, "Desactivado");
-    }
+    s_timerRow = make_settings_row(list, LV_SYMBOL_BELL, UI_COLOR_TEXT_DIM,
+                                   "Temporizador", &s_timerVal, 36, true, true);
+    ui_config_refresh_timer_label();
 
     /* Modo noche */
     lv_obj_t *nightRow = lv_obj_create(list);
@@ -216,8 +217,8 @@ lv_obj_t *ui_settings_tab_build(lv_obj_t *parent)
     lv_obj_set_size(nightSw, 40, 22);
     ui_style_switch(nightSw);
     lv_obj_align(nightSw, LV_ALIGN_RIGHT_MID, 0, 0);
-    lv_obj_add_state(nightSw, LV_STATE_CHECKED);
-    lv_obj_add_state(nightSw, LV_STATE_DISABLED);
+    s_nightSw = nightSw;
+    ui_config_sync_night_switch(ui_settings_get_night_mode());
 
     /* Informacion */
     lv_obj_t *infoRow = make_settings_row(list, "i", UI_COLOR_TEXT_DIM,
@@ -336,5 +337,37 @@ void ui_config_update_mic_sensitivity_meter(int sound_level, int music_level)
             barVal = 0;
         }
         lv_bar_set_value(s_micSensBar, barVal, LV_ANIM_OFF);
+    }
+}
+
+lv_obj_t *ui_config_get_timer_row(void)
+{
+    return s_timerRow;
+}
+
+lv_obj_t *ui_config_get_night_switch(void)
+{
+    return s_nightSw;
+}
+
+void ui_config_refresh_timer_label(void)
+{
+    if (!s_timerVal) {
+        return;
+    }
+    char buf[20];
+    ui_settings_format_timer_label(buf, sizeof(buf));
+    lv_label_set_text(s_timerVal, buf);
+}
+
+void ui_config_sync_night_switch(bool enabled)
+{
+    if (!s_nightSw) {
+        return;
+    }
+    if (enabled) {
+        lv_obj_add_state(s_nightSw, LV_STATE_CHECKED);
+    } else {
+        lv_obj_clear_state(s_nightSw, LV_STATE_CHECKED);
     }
 }

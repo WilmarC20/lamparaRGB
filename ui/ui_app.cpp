@@ -18,6 +18,7 @@
 #include "lampara_ui.h"
 #include "ui_config_screen.h"
 #include "ui_control_screen.h"
+#include "ui_settings.h"
 #include "ui_prov_screen.h"
 #if RM_PROV_UI_NO_LVGL
 #include "ui_prov_raw.h"
@@ -544,6 +545,28 @@ static void on_mic_sens_changed(lv_event_t *e)
     ui_config_set_mic_sensitivity_pct(pct);
 }
 
+static void on_timer_row_clicked(lv_event_t *e)
+{
+    if (lv_event_get_code(e) != LV_EVENT_CLICKED) {
+        return;
+    }
+    ui_settings_timer_cycle();
+    ui_config_refresh_timer_label();
+}
+
+static void on_night_mode_changed(lv_event_t *e)
+{
+    if (syncingUi || lv_event_get_code(e) != LV_EVENT_VALUE_CHANGED) {
+        return;
+    }
+    const bool enabled = lv_obj_has_state((lv_obj_t *)lv_event_get_target(e), LV_STATE_CHECKED);
+    ui_settings_set_night_mode(enabled);
+    if (ui_settings_service(&appState)) {
+        apply_and_report();
+        ui_app_sync_from_state();
+    }
+}
+
 static void on_start_prov(lv_event_t *e)
 {
     if (lv_event_get_code(e) != LV_EVENT_CLICKED) return;
@@ -582,6 +605,14 @@ static void bind_config_events(void)
     lv_obj_t *micSensSlider = ui_config_get_mic_sensitivity_slider();
     if (micSensSlider) {
         lv_obj_add_event_cb(micSensSlider, on_mic_sens_changed, LV_EVENT_VALUE_CHANGED, NULL);
+    }
+    lv_obj_t *timerRow = ui_config_get_timer_row();
+    if (timerRow) {
+        lv_obj_add_event_cb(timerRow, on_timer_row_clicked, LV_EVENT_CLICKED, NULL);
+    }
+    lv_obj_t *nightSw = ui_config_get_night_switch();
+    if (nightSw) {
+        lv_obj_add_event_cb(nightSw, on_night_mode_changed, LV_EVENT_VALUE_CHANGED, NULL);
     }
 }
 
@@ -804,7 +835,7 @@ static void on_preset_clicked(lv_event_t *e)
     if (syncingUi || lv_event_get_code(e) != LV_EVENT_CLICKED) return;
     const int idx = (int)(intptr_t)lv_event_get_user_data(e);
     static const struct { uint16_t h; uint8_t s; } presets[7] = {
-        { 200, 25 }, { 0, 0 }, { 35, 55 }, { 0, 255 }, { 85, 255 }, { 170, 255 }, { 280, 255 }
+        { 210, 110 }, { 0, 0 }, { 28, 170 }, { 0, 255 }, { 85, 255 }, { 170, 255 }, { 280, 255 }
     };
     if (idx < 0 || idx >= 7) return;
     appState.hue = presets[idx].h;
@@ -916,6 +947,7 @@ void ui_app_setup(void)
     ui_app_sync_from_state();
 
     audio_input_init();
+    ui_settings_init();
 
     for (int i = 0; i < 8; i++) {
         lv_timer_handler();
@@ -1029,6 +1061,18 @@ void ui_app_loop(void)
         if ((nowMs - s_lastWifiUiMs) >= 400U) {
             s_lastWifiUiMs = nowMs;
             update_status_label();
+        }
+    }
+    {
+        static uint32_t s_lastSettingsMs = 0;
+        const uint32_t nowMs = millis();
+        if ((nowMs - s_lastSettingsMs) >= 1000U) {
+            s_lastSettingsMs = nowMs;
+            ui_config_refresh_timer_label();
+            if (ui_settings_service(&appState)) {
+                apply_and_report();
+                ui_app_sync_from_state();
+            }
         }
     }
 

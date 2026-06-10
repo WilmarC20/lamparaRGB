@@ -68,9 +68,9 @@ static const struct {
     uint8_t sat;
     const char *label;
 } kPresets[] = {
-    { 200, 25, "Frio" },
-    { 0,   0,  "Neutro" },
-    { 35,  55, "Calido" },
+    { 210, 110, "Frio" },
+    { 0,   0,   "Neutro" },
+    { 28,  170, "Calido" },
     { 0,   255, "R" },
     { 85,  255, "G" },
     { 170, 255, "B" },
@@ -80,15 +80,36 @@ static const struct {
 static lv_color_t ui_color_from_hue_sat(uint16_t hue, uint8_t sat255)
 {
     if (sat255 == 0) {
-        return lv_color_hex(0xE8E8F0);
+        return lv_color_hex(0xFFFFFF);
     }
     const uint8_t sat100 = (uint8_t)((sat255 * 100U) / 255U);
     return lv_color_hsv_to_rgb(hue, sat100, 100);
 }
 
+static lv_color_t ui_preset_dot_color(int idx, uint16_t hue, uint8_t sat255)
+{
+    /* Vista previa mas marcada en pantalla; el LED usa kPresets al pulsar. */
+    switch (idx) {
+        case 0:
+            return lv_color_hex(0x7EB8FF);
+        case 1:
+            return lv_color_hex(0xF4F4F4);
+        case 2:
+            return lv_color_hex(0xFFB060);
+        default:
+            return ui_color_from_hue_sat(hue, sat255);
+    }
+}
+
 static void style_color_dot(lv_obj_t *dot, uint16_t hue, uint8_t sat)
 {
     lv_obj_set_style_bg_color(dot, ui_color_from_hue_sat(hue, sat), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(dot, LV_OPA_COVER, LV_PART_MAIN);
+}
+
+static void style_preset_dot(lv_obj_t *dot, int idx, uint16_t hue, uint8_t sat)
+{
+    lv_obj_set_style_bg_color(dot, ui_preset_dot_color(idx, hue, sat), LV_PART_MAIN);
     lv_obj_set_style_bg_opa(dot, LV_OPA_COVER, LV_PART_MAIN);
 }
 
@@ -111,7 +132,7 @@ static lv_obj_t *make_preset_btn(lv_obj_t *parent, int idx)
     lv_obj_set_style_border_color(dot, lv_color_hex(0x555566), LV_PART_MAIN);
     lv_obj_align(dot, LV_ALIGN_TOP_MID, 0, 4);
     lv_obj_clear_flag(dot, LV_OBJ_FLAG_CLICKABLE);
-    style_color_dot(dot, kPresets[idx].hue, kPresets[idx].sat);
+    style_preset_dot(dot, idx, kPresets[idx].hue, kPresets[idx].sat);
 
     if (kPresets[idx].label[0]) {
         lv_obj_t *lbl = lv_label_create(btn);
