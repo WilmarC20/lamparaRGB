@@ -1,10 +1,10 @@
 #include "ui_config_screen.h"
 #include "ui_settings.h"
+#include "config.h"
 #include "ui_control_screen.h"
 #include "ui_theme.h"
 #include "lampara_ui.h"
 #include "audio_input.h"
-#include "config.h"
 #include "lvgl.h"
 #include <stdio.h>
 
@@ -22,6 +22,7 @@ static lv_obj_t *s_micSensBar = NULL;
 static lv_obj_t *s_micSensLevelLbl = NULL;
 static lv_obj_t *s_timerRow = NULL;
 static lv_obj_t *s_timerVal = NULL;
+static lv_obj_t *s_speakerRow = NULL;
 static lv_obj_t *s_nightSw = NULL;
 
 static lv_obj_t *make_settings_row(lv_obj_t *parent, const char *icon, uint32_t icon_color,
@@ -190,6 +191,15 @@ lv_obj_t *ui_settings_tab_build(lv_obj_t *parent)
                                    "Temporizador", &s_timerVal, 36, true, true);
     ui_config_refresh_timer_label();
 
+#if ENABLE_SPEAKER
+    s_speakerRow = make_settings_row(list, LV_SYMBOL_VOLUME_MAX, 0x00CCCC,
+                                     "Probar altavoz", NULL, 36, false, true);
+    lv_obj_t *spkVal = lv_obj_get_child(s_speakerRow, 2);
+    if (spkVal) {
+        lv_label_set_text(spkVal, "Tocar");
+    }
+#endif
+
     /* Modo noche */
     lv_obj_t *nightRow = lv_obj_create(list);
     lv_obj_set_width(nightRow, kScreenWidth - 16);
@@ -239,10 +249,6 @@ lv_obj_t *ui_settings_tab_build(lv_obj_t *parent)
     ui_BtnConfigBack = NULL;
     ui_Config = tab;
     return tab;
-}
-
-void ui_Config_screen_init(void)
-{
 }
 
 void ui_config_set_wifi_state(ui_wifi_state_t state, const char *text)
@@ -343,6 +349,11 @@ void ui_config_update_mic_sensitivity_meter(int sound_level, int music_level)
 lv_obj_t *ui_config_get_timer_row(void)
 {
     return s_timerRow;
+}
+
+lv_obj_t *ui_config_get_speaker_row(void)
+{
+    return s_speakerRow;
 }
 
 lv_obj_t *ui_config_get_night_switch(void)

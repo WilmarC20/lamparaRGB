@@ -2,6 +2,9 @@
 #include "lampara_ui.h"
 #include "display.h"
 #include "config.h"
+
+#if !RM_PROV_UI_NO_LVGL
+
 #include "ui_qr_bitmap.h"
 #include "lvgl.h"
 #include <esp_heap_caps.h>
@@ -211,3 +214,4 @@ void ui_prov_release_qr_for_ble(void)
     s_qrOnPanel = false;
 }
 #endif
+#endif /* !RM_PROV_UI_NO_LVGL */

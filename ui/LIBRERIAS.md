@@ -1,69 +1,111 @@
-# Librerías de LamparaV3
+# Librerías y estructura — LamparaV3
 
-## Solo estas 3 (+ ESP32 core)
+## Sketchbook
 
-| Librería | Uso | Ubicación activa |
-|----------|-----|------------------|
-| **lvgl** | UI táctil | `ui/libraries/lvgl` |
-| **TFT_eSPI** | Display ILI9341 | `ui/libraries/TFT_eSPI` |
-| **WS2812FX** | Tira LED | `ui/libraries/WS2812FX` |
-| **RainMaker / WiFi** | Cloud | Paquete ESP32 (Arduino15) |
+```
+H:\Programacion\Arduino\lamparaV3
+```
 
-`ui/libraries/` tiene **prioridad** sobre otras carpetas del PC (p. ej. LAMPARAV2).
+El IDE debe usar este sketchbook para que `libraries/` del repo tenga prioridad sobre copias globales (LAMPARAV2, Espacio1, etc.).
+
+## Librerías en `libraries/` (solo las que compila el firmware)
+
+| Librería | Uso | Notas |
+|----------|-----|--------|
+| **lvgl** 8.3.11 | UI táctil LVGL | Config en `ui/lv_conf.h` |
+| **TFT_eSPI** 2.5.43 | Display ILI9341 320×240 | `User_Setup.h` para ESP32-2432S024C |
+| **WS2812FX** 1.4.6 | Tira WS2812 (90 LEDs) | Requiere **Adafruit_NeoPixel** (IDE global) |
+| **minimp3** | Radio online MP3 | Header-only; decode en `radio_player.cpp` |
+
+### Del core ESP32 (Arduino15, no en repo)
+
+RainMaker, WiFiProv, WiFi, Wire, Preferences, RMT, DAC HAL.
+
+### Eliminadas / no usar
+
+| Carpeta | Motivo |
+|---------|--------|
+| ~~ESP8266Audio~~ | Sustituida por minimp3 (menos IRAM) |
+| ~~ESP32-audioI2S~~ | Eliminada |
+| ~~ui/libraries/~~ | Eliminada; era duplicado de `lv_conf.h` |
+
+## minimp3 (radio)
+
+Decoder MP3 en un solo header. La implementacion vive en `radio_mp3.cpp` (`MINIMP3_IMPLEMENTATION`).
+En `minimp3.h`: `mp3dec_scratch_t` es **static** dentro de `mp3dec_decode_frame` (~16 KB; no cabe en stack de tarea).
+Stream HTTP via `NetworkClient` (GET manual + redirects; sin HTTPClient para ahorrar IRAM). Salida `dacWrite` GPIO 26.
 
 ## Particiones flash (RainMaker + BLE)
 
-RainMaker necesita la partición **`fctry`**. Sin ella, `beginProvision` reinicia el ESP32.
-
-### Opción recomendada: Custom + `partitions.csv`
-
-El archivo debe llamarse **`partitions.csv`** (con **s**), en la carpeta del sketch `ui/`.
+RainMaker necesita partición **`fctry`**. Archivo: **`ui/partitions.csv`**.
 
 | Herramienta | Valor |
 |-------------|--------|
 | Board | ESP32 Dev Module |
 | Flash Size | **4MB** |
 | Partition Scheme | **Custom** |
-| Sketchbook | `H:\Programacion\Arduino\lamparaV3` |
 
-### Opción alternativa: menú RainMaker
+Tras cambiar particiones: **Erase All Flash** y volver a subir.
 
-| Herramienta | Valor |
-|-------------|--------|
-| Partition Scheme | **RainMaker 4MB No OTA** (no "RainMaker 4MB") |
+Ver también **`ui/PROV_ESTADO.md`** para provisioning BLE/QR.
 
-Si usas el menú RainMaker, **renombra o borra** `ui/partitions.csv` para que no pise la tabla del IDE.
+## `build_opt.h` (IRAM / RAM)
 
-### Tras cambiar particiones
+Flags en `ui/build_opt.h`:
 
-**Tools → Erase All Flash Before Sketch Upload → Enabled**, luego sube el sketch.
+- WiFi sin optimización IRAM (`CONFIG_ESP_WIFI_IRAM_OPT=0`) — libera IRAM para radio + LVGL
+- BLE en flash cuando el core lo permite
+- Buffers WiFi mínimos, logs desactivados
 
-## Provisioning RainMaker (depuracion)
+## Estructura del sketch `ui/`
 
-Ver **`ui/PROV_ESTADO.md`** — flujo pantalla QR, BLE `PROV_xxx`, logs `RM DBG` y errores conocidos.
+```
+ui/
+├── ui.ino                 Entrada Arduino
+├── config.h               Flags de compilación
+├── build_opt.h            Flags linker/compilador
+├── lv_conf.h              Config LVGL
+├── partitions.csv         Tabla flash RainMaker
+│
+├── ui_app.cpp/h           Orquestador (setup/loop UI)
+├── lamp_state.c/h         Estado lámpara
+├── display.cpp/h          TFT + LVGL flush
+├── touch_cst820.*         Touch I2C
+├── CST820.*               Driver touch
+│
+├── ui_init.c              Init pantallas
+├── lampara_ui.h           Globals LVGL
+├── ui_control_screen.c/h  Tabs COLOR / EFX / RADIO / AJUSTES
+├── ui_config_screen.c/h   Contenido tab Ajustes
+├── ui_radio_screen.c/h    Tab radio Colombia
+├── ui_effects.c/h         Catálogo efectos
+├── ui_theme.h             Estilos UI
+├── ui_settings.cpp/h      Timer, modo noche
+├── ui_prov_screen.c/h     Prov LVGL (legacy si RM_PROV_UI_NO_LVGL=0)
+├── ui_prov_raw.cpp/h      Prov TFT directo (activo)
+├── ui_qr_bitmap.c/h       QR provisioning
+│
+├── led_controller.cpp/h   WS2812FX
+├── led_calib.h              Calibración LEDs
+├── music_effects.cpp/h    Efectos reactivos al mic
+├── audio_input.cpp/h      Micrófono ADC
+├── audio_output.cpp/h     Prueba tono altavoz
+├── radio_player.cpp/h     Streaming emisoras CO
+├── rainmaker_app.cpp/h    RainMaker + WiFiProv
+├── ir_control.cpp/h       Mando IR
+├── IRControlLite.cpp/h    RMT IR
+│
+├── pins.h, led_layout.h, lamp_log.h, music_fx.h
+├── LIBRERIAS.md           Este archivo
+└── PROV_ESTADO.md         Depuración prov
+```
 
-En Serial debe aparecer: `RM: fctry OK @ 0x3EA000`
+## Referencia de diseño (no compilada)
 
-## Si "Custom" no compila (exit status 1)
-
-1. Comprueba que existe `ui/partitions.csv` (no `partition.csv`).
-2. Flash Size = **4MB**.
-3. Abre **Archivo → Preferencias → Compilación**: activa salida detallada y lee la **primera línea de error** (no solo "exit status 1").
-4. Errores frecuentes:
-   - `Sketch too big` → elegiste "RainMaker 4MB" (con OTA); usa **RainMaker 4MB No OTA** o **Custom**.
-   - `dram0_0 overflow` → sketchbook debe ser `lamparaV3`, no `LAMPARAV2`.
-   - `lv_conf.h incorrecto` → ver abajo.
+`SquareLineStudio/` — proyecto SquareLine exportado; la UI activa está reescrita en `ui_*`.
 
 ## lv_conf.h
 
-Configuración LVGL en **`ui/lv_conf.h`** con `LV_MEM_CUSTOM 1` (heap, no 64 KB estáticos).
+Solo **`ui/lv_conf.h`**. `LV_MEM_CUSTOM=1` (heap, no buffer estático de 64 KB).
 
-`build_opt.h` fuerza `-DLV_CONF_INCLUDE_SIMPLE` y `-DLV_MEM_CUSTOM=1`.
-
-## Sketchbook recomendado
-
-```
-H:\Programacion\Arduino\lamparaV3
-```
-
-Si el sketchbook es `H:\Programacion\Arduino`, el IDE indexa cientos de librerías de otros proyectos y puede elegir las incorrectas.
+`ui.ino` comprueba en compile-time que `LV_MEM_CUSTOM==1`.

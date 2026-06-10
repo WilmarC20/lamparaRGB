@@ -36,7 +36,7 @@ Controlador de tira LED multicolor basado en la placa **ESP32-2432S024C** (panta
 
 1. Clona este repositorio.
 2. En Arduino IDE, configura el **Sketchbook** apuntando a la carpeta del repo (o abre directamente `ui/ui.ino`).
-3. Las librerías prioritarias están en `ui/libraries/` y `libraries/` del repo.
+3. Las librerías del firmware están en `libraries/` del repo (ver `ui/LIBRERIAS.md`).
 
 > **Importante:** si el IDE encuentra librerías de otros proyectos (por ejemplo otro `lv_conf.h` con pool estático de 64 KB), la compilación puede fallar por falta de RAM. Consulta `ui/LIBRERIAS.md`.
 
@@ -184,7 +184,7 @@ Setup OK heap=...
 
 ### Problemas de RAM
 
-- Usa las librerías del repo (`ui/libraries/`, `libraries/`).
+- Usa las librerías del repo (`libraries/`).
 - Verifica `LV_MEM_CUSTOM 1` en `ui/lv_conf.h`.
 - Revisa `ui/build_opt.h` (buffers WiFi/BLE reducidos).
 - Consulta `ui/LIBRERIAS.md`.
@@ -196,15 +196,17 @@ Setup OK heap=...
 ```
 lamparaV3/
 ├── ui/                    Sketch principal (ui.ino)
-│   ├── ui_control_screen.c   UI con pestañas COLOR / EFECTOS / AJUSTES
-│   ├── ui_config_screen.c    Panel de ajustes
-│   ├── rainmaker_app.cpp     Integración ESP RainMaker
-│   ├── led_controller.cpp    Control WS2812FX
+│   ├── ui_app.cpp            Orquestador setup/loop
+│   ├── ui_control_screen.c   Tabs COLOR / EFX / RADIO / AJUSTES
+│   ├── ui_config_screen.c    Contenido tab Ajustes
+│   ├── radio_player.cpp      Radio online Colombia
+│   ├── rainmaker_app.cpp     ESP RainMaker + WiFiProv
+│   ├── led_controller.cpp    WS2812FX
 │   ├── config.h              Opciones de compilación
 │   ├── partitions.csv        Particiones (incluye fctry)
 │   └── lv_conf.h             Configuración LVGL
-├── libraries/             lvgl, TFT_eSPI, WS2812FX
-└── SquareLineStudio/      Proyecto SquareLine (referencia UI)
+├── libraries/             lvgl, TFT_eSPI, WS2812FX, minimp3
+└── SquareLineStudio/      Referencia diseño (no compilada)
 ```
 
 ---

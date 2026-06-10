@@ -25,7 +25,6 @@ extern lv_obj_t *ui_MicSensSlider;
 extern lv_obj_t *ui_MicSensBar;
 
 void ui_init(void);
-void ui_init_prov_only(void);
 void ui_show_control_screen(void);
 void ui_show_config_screen(void);
 void ui_show_prov_screen(void);

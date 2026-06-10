@@ -5,6 +5,15 @@
 #include <math.h>
 #include <string.h>
 
+#if defined(ARDUINO_ARCH_ESP32) && ENABLE_RADIO && ENABLE_SPEAKER
+#include "driver/adc.h"
+#define AUDIO_USE_LEGACY_ADC 1
+#endif
+
+#ifndef AUDIO_USE_LEGACY_ADC
+#define AUDIO_USE_LEGACY_ADC 0
+#endif
+
 #ifndef AUDIO_SAMPLE_MS
 #define AUDIO_SAMPLE_MS 1
 #endif
@@ -30,6 +39,19 @@ static volatile int s_dcOffset = 2048;
 static bool s_testMode = false;
 static int s_micThreshold = AUDIO_MIC_THRESHOLD;
 static int s_silenceLevel = AUDIO_SILENCE_LEVEL;
+
+#if AUDIO_USE_LEGACY_ADC
+/* GPIO 35 = ADC1_CH7; mismo driver legacy que I2S/DAC interno de ESP32-audioI2S */
+static adc1_channel_t mic_adc_channel(void)
+{
+    return ADC1_CHANNEL_7;
+}
+
+static int mic_adc_read_raw(void)
+{
+    return (int)adc1_get_raw(mic_adc_channel());
+}
+#endif
 
 static int level_from_abs(int acAbs)
 {
@@ -89,7 +111,11 @@ static void adc_task(void *param)
     int emaAbs = 0;
 
     while (true) {
+#if AUDIO_USE_LEGACY_ADC
+        const int raw = mic_adc_read_raw();
+#else
         const int raw = analogRead(PIN_MIC_ADC);
+#endif
         s_rawAdc = raw;
 
         dc = (dc * 31 + raw) / 32;
@@ -140,8 +166,13 @@ void audio_input_start(void)
     s_soundLevel = 0;
     s_soundSpan = 0;
     s_dcOffset = 2048;
+#if AUDIO_USE_LEGACY_ADC
+    adc1_config_width(ADC_WIDTH_BIT_12);
+    adc1_config_channel_atten(mic_adc_channel(), ADC_ATTEN_DB_11);
+#else
     analogSetPinAttenuation(PIN_MIC_ADC, ADC_11db);
     analogReadResolution(12);
+#endif
 
     xTaskCreatePinnedToCore(adc_task, "adc_audio", ADC_TASK_STACK, NULL, ADC_TASK_PRIO,
                             &adcTaskHandle, 1);

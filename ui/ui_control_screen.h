@@ -9,10 +9,16 @@
 extern "C" {
 #endif
 
+#define UI_TAB_COLOR     0
+#define UI_TAB_EFFECTS   1
+#define UI_TAB_RADIO     2
+#define UI_TAB_SETTINGS  3
+
 void ui_Control_screen_init(void);
 void ui_set_active_tab(uint8_t tab);
 uint8_t ui_get_active_tab(void);
 bool ui_is_settings_tab(void);
+bool ui_is_radio_tab(void);
 void ui_update_brightness_label(uint8_t brightness);
 void ui_update_speed_label(uint8_t pct);
 typedef enum {
@@ -43,7 +49,8 @@ void ui_control_register_callbacks(lv_event_cb_t effect_cb,
                                    lv_event_cb_t nav_cb,
                                    lv_event_cb_t speed_cb,
                                    lv_event_cb_t dir_cb,
-                                   void (*settings_bind_fn)(void));
+                                   void (*settings_bind_fn)(void),
+                                   void (*radio_bind_fn)(void));
 
 #ifdef __cplusplus
 }

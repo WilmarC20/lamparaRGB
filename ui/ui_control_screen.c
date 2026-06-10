@@ -1,6 +1,7 @@
 #include "ui_control_screen.h"
 #include "ui_config_screen.h"
 #include "ui_effects.h"
+#include "ui_radio_screen.h"
 #include "lampara_ui.h"
 #include "ui_theme.h"
 #include "lvgl.h"
@@ -8,10 +9,8 @@
 #include <string.h>
 #include <stdint.h>
 
-#define UI_TAB_COLOR     0
-#define UI_TAB_EFFECTS   1
-#define UI_TAB_SETTINGS  2
 #define PRESET_COUNT     7
+#define UI_NAV_TABS      4
 #define UI_WIFI_SSID_W   108
 
 static lv_obj_t *s_header = NULL;
@@ -25,10 +24,11 @@ static lv_timer_t *s_wifiAnimTimer = NULL;
 static bool s_wifiAnimPhase = false;
 static lv_obj_t *s_tabColor = NULL;
 static lv_obj_t *s_tabEffects = NULL;
+static lv_obj_t *s_tabRadio = NULL;
 static lv_obj_t *s_tabSettings = NULL;
 static lv_obj_t *s_navBar = NULL;
-static lv_obj_t *s_navBtns[3];
-static lv_obj_t *s_navIndicators[3];
+static lv_obj_t *s_navBtns[UI_NAV_TABS];
+static lv_obj_t *s_navIndicators[UI_NAV_TABS];
 static lv_obj_t *s_effectList = NULL;
 static lv_obj_t *s_effectColorBar = NULL;
 static lv_obj_t *s_effectColorDots[7];
@@ -42,6 +42,7 @@ static lv_obj_t *s_presetRow = NULL;
 static lv_obj_t *s_presetBtns[PRESET_COUNT];
 static uint8_t s_activeTab = UI_TAB_COLOR;
 static bool s_effectsBuilt = false;
+static bool s_radioBuilt = false;
 static bool s_settingsBuilt = false;
 static lv_event_cb_t s_cbEffect = NULL;
 static lv_event_cb_t s_cbPreset = NULL;
@@ -50,6 +51,7 @@ static lv_event_cb_t s_cbSpeed = NULL;
 static lv_event_cb_t s_cbDir = NULL;
 static lv_event_cb_t s_cbEffectColor = NULL;
 static void (*s_cbSettingsBind)(void) = NULL;
+static void (*s_cbRadioBind)(void) = NULL;
 
 #define UI_EFFECT_COLOR_BAR_W 168
 #define UI_EFFECT_COLOR_SEGMENTS 7
@@ -60,6 +62,7 @@ static const struct {
 } kTabInfo[] = {
     { "epicfilm.co", LV_SYMBOL_TINT },
     { "EFECTOS",     LV_SYMBOL_SHUFFLE },
+    { "RADIO CO",    LV_SYMBOL_VOLUME_MAX },
     { "AJUSTES",     LV_SYMBOL_SETTINGS },
 };
 
@@ -645,8 +648,10 @@ static void build_effects_tab(lv_obj_t *parent)
 
 static void build_nav_bar(lv_obj_t *parent)
 {
-    static const char *kNavLabels[] = { "COLOR", "EFECTOS", "AJUSTES" };
-    static const char *kNavIcons[] = { LV_SYMBOL_TINT, LV_SYMBOL_SHUFFLE, LV_SYMBOL_SETTINGS };
+    static const char *kNavLabels[] = { "COLOR", "EFX", "RADIO", "AJUST" };
+    static const char *kNavIcons[] = {
+        LV_SYMBOL_TINT, LV_SYMBOL_SHUFFLE, LV_SYMBOL_VOLUME_MAX, LV_SYMBOL_SETTINGS
+    };
 
     s_navBar = lv_obj_create(parent);
     lv_obj_set_size(s_navBar, kScreenWidth, UI_NAV_H);
@@ -656,11 +661,11 @@ static void build_nav_bar(lv_obj_t *parent)
     lv_obj_set_style_pad_all(s_navBar, 0, LV_PART_MAIN);
     lv_obj_clear_flag(s_navBar, LV_OBJ_FLAG_SCROLLABLE);
 
-    const int btnW = kScreenWidth / 3;
-    for (int i = 0; i < 3; i++) {
+    const int btnW = kScreenWidth / UI_NAV_TABS;
+    for (int i = 0; i < UI_NAV_TABS; i++) {
         s_navIndicators[i] = lv_obj_create(s_navBar);
-        lv_obj_set_size(s_navIndicators[i], btnW - 20, 2);
-        lv_obj_set_pos(s_navIndicators[i], i * btnW + 10, 0);
+        lv_obj_set_size(s_navIndicators[i], btnW - 12, 2);
+        lv_obj_set_pos(s_navIndicators[i], i * btnW + 6, 0);
         lv_obj_set_style_bg_color(s_navIndicators[i], lv_color_hex(UI_COLOR_ACCENT), LV_PART_MAIN);
         lv_obj_set_style_border_width(s_navIndicators[i], 0, LV_PART_MAIN);
         lv_obj_set_style_radius(s_navIndicators[i], 1, LV_PART_MAIN);
@@ -676,15 +681,17 @@ static void build_nav_bar(lv_obj_t *parent)
         lv_obj_set_style_shadow_width(s_navBtns[i], 0, LV_PART_MAIN);
         lv_obj_set_style_radius(s_navBtns[i], 0, LV_PART_MAIN);
         lv_obj_set_style_pad_all(s_navBtns[i], 0, LV_PART_MAIN);
-        lv_obj_set_flex_flow(s_navBtns[i], LV_FLEX_FLOW_ROW);
+        lv_obj_set_flex_flow(s_navBtns[i], LV_FLEX_FLOW_COLUMN);
         lv_obj_set_flex_align(s_navBtns[i], LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-        lv_obj_set_style_pad_column(s_navBtns[i], 4, LV_PART_MAIN);
+        lv_obj_set_style_pad_row(s_navBtns[i], 0, LV_PART_MAIN);
 
         lv_obj_t *ico = lv_label_create(s_navBtns[i]);
         lv_label_set_text(ico, kNavIcons[i]);
+        lv_obj_set_style_text_font(ico, &lv_font_montserrat_14, LV_PART_MAIN);
 
         lv_obj_t *lbl = lv_label_create(s_navBtns[i]);
         lv_label_set_text(lbl, kNavLabels[i]);
+        lv_obj_set_style_text_font(lbl, &lv_font_montserrat_14, LV_PART_MAIN);
     }
 }
 
@@ -715,6 +722,18 @@ static void ensure_effects_tab(void)
     bind_effects_controls();
 }
 
+static void ensure_radio_tab(void)
+{
+    if (s_radioBuilt || !ui_Control) {
+        return;
+    }
+    s_tabRadio = ui_radio_tab_build(ui_Control);
+    s_radioBuilt = true;
+    if (s_cbRadioBind) {
+        s_cbRadioBind();
+    }
+}
+
 static void ensure_settings_tab(void)
 {
     if (s_settingsBuilt || !ui_Control) {
@@ -737,7 +756,8 @@ void ui_control_register_callbacks(lv_event_cb_t effect_cb,
                                    lv_event_cb_t nav_cb,
                                    lv_event_cb_t speed_cb,
                                    lv_event_cb_t dir_cb,
-                                   void (*settings_bind_fn)(void))
+                                   void (*settings_bind_fn)(void),
+                                   void (*radio_bind_fn)(void))
 {
     s_cbEffect = effect_cb;
     s_cbPreset = preset_cb;
@@ -745,6 +765,7 @@ void ui_control_register_callbacks(lv_event_cb_t effect_cb,
     s_cbSpeed = speed_cb;
     s_cbDir = dir_cb;
     s_cbSettingsBind = settings_bind_fn;
+    s_cbRadioBind = radio_bind_fn;
 }
 
 static void ui_bind_deferred_callbacks(void)
@@ -760,6 +781,8 @@ void ui_set_active_tab(uint8_t tab)
 {
     if (tab == UI_TAB_EFFECTS) {
         ensure_effects_tab();
+    } else if (tab == UI_TAB_RADIO) {
+        ensure_radio_tab();
     } else if (tab == UI_TAB_SETTINGS) {
         ensure_settings_tab();
     }
@@ -777,6 +800,10 @@ void ui_set_active_tab(uint8_t tab)
         if (tab == UI_TAB_EFFECTS) lv_obj_clear_flag(s_tabEffects, LV_OBJ_FLAG_HIDDEN);
         else lv_obj_add_flag(s_tabEffects, LV_OBJ_FLAG_HIDDEN);
     }
+    if (s_tabRadio) {
+        if (tab == UI_TAB_RADIO) lv_obj_clear_flag(s_tabRadio, LV_OBJ_FLAG_HIDDEN);
+        else lv_obj_add_flag(s_tabRadio, LV_OBJ_FLAG_HIDDEN);
+    }
     if (s_tabSettings) {
         if (tab == UI_TAB_SETTINGS) lv_obj_clear_flag(s_tabSettings, LV_OBJ_FLAG_HIDDEN);
         else lv_obj_add_flag(s_tabSettings, LV_OBJ_FLAG_HIDDEN);
@@ -792,7 +819,7 @@ void ui_set_active_tab(uint8_t tab)
                                     LV_PART_MAIN);
     }
 
-    for (int i = 0; i < 3; i++) {
+    for (int i = 0; i < UI_NAV_TABS; i++) {
         if (!s_navBtns[i]) continue;
         lv_obj_t *ico = lv_obj_get_child(s_navBtns[i], 0);
         lv_obj_t *lbl = lv_obj_get_child(s_navBtns[i], 1);
@@ -815,6 +842,11 @@ uint8_t ui_get_active_tab(void)
 bool ui_is_settings_tab(void)
 {
     return s_activeTab == UI_TAB_SETTINGS;
+}
+
+bool ui_is_radio_tab(void)
+{
+    return s_activeTab == UI_TAB_RADIO;
 }
 
 void ui_update_brightness_label(uint8_t brightness)
@@ -1020,7 +1052,7 @@ void ui_set_settings_brightness_label(lv_obj_t *lbl)
 
 void ui_bind_nav_callbacks(lv_event_cb_t cb)
 {
-    for (int i = 0; i < 3; i++) {
+    for (int i = 0; i < UI_NAV_TABS; i++) {
         if (s_navBtns[i] && cb) {
             lv_obj_add_event_cb(s_navBtns[i], cb, LV_EVENT_CLICKED, (void *)(intptr_t)i);
         }

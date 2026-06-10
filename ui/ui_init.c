@@ -1,6 +1,7 @@
 #include "lampara_ui.h"
 #include "ui_control_screen.h"
 #include "ui_prov_screen.h"
+#include "config.h"
 
 lv_obj_t *ui_Control;
 lv_obj_t *ui_Config;
@@ -32,13 +33,17 @@ void ui_show_config_screen(void)
 {
     if (ui_Control) {
         lv_disp_load_scr(ui_Control);
-        ui_set_active_tab(2);
+        ui_set_active_tab(UI_TAB_SETTINGS);
         lv_obj_invalidate(ui_Control);
     }
 }
 
 void ui_show_prov_screen(void)
 {
+#if RM_PROV_UI_NO_LVGL
+    /* Pantalla prov dibujada en ui_prov_raw (TFT directo). */
+    return;
+#else
     if (!ui_Prov) {
         ui_Prov_screen_init();
     }
@@ -46,16 +51,11 @@ void ui_show_prov_screen(void)
         lv_disp_load_scr(ui_Prov);
         lv_obj_invalidate(ui_Prov);
     }
+#endif
 }
 
 void ui_init(void)
 {
     ui_Control_screen_init();
     ui_show_control_screen();
-}
-
-void ui_init_prov_only(void)
-{
-    ui_Prov_screen_init();
-    ui_show_prov_screen();
 }

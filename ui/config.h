@@ -46,6 +46,16 @@
 /* Valor L en silencio (Config -> Mic). Ajusta hasta que en silencio L ~= este numero. */
 #define AUDIO_SILENCE_LEVEL  200
 
+/* 0 = sin WS2812 (GPIO 1 queda libre para Serial; usar mientras pruebas radio) */
+#define ENABLE_LED_STRIP       0
+
+/* Altavoz onboard ESP32-2432S024C (GPIO 26 -> FM8002A) */
+#define ENABLE_SPEAKER         1
+#define SPEAKER_TEST_AT_BOOT   0
+
+/* Radio en linea Colombia (minimp3 + NetworkClient en tarea aparte) */
+#define ENABLE_RADIO           1
+
 /* Salida Serial del firmware (0 = silencio total en nuestro codigo) */
 #define LAMP_SERIAL_LOG      1
 
@@ -93,7 +103,7 @@
 
 /* 1 = QR grafico LVGL. 0 = solo texto JSON (depuracion) */
 /* QR grafico: lv_qrcode_create + lv_qrcode_update (2 pasos en cfg_load) */
-#define CONFIG_USE_LVGL_QR 1
+#define CONFIG_USE_LVGL_QR 0
 /* 120 px en pantalla 320x240 (~3 px/modulo; escaneable). Buffer estatico ~29 KB */
 #define CONFIG_QR_SIZE_PX  120
 #define CONFIG_QR_FRAME_PX 6

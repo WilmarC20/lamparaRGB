@@ -761,7 +761,7 @@ void TFT_eSPI::pushImageDMA(int32_t x, int32_t y, int32_t w, int32_t h, uint16_t
 ***************************************************************************************/
 extern "C" void dc_callback();
 
-void IRAM_ATTR dc_callback(spi_transaction_t *spi_tx)
+void dc_callback(spi_transaction_t *spi_tx)
 {
   if ((bool)spi_tx->user) {DC_D;}
   else {DC_C;}
@@ -773,7 +773,7 @@ void IRAM_ATTR dc_callback(spi_transaction_t *spi_tx)
 ***************************************************************************************/
 extern "C" void dma_end_callback();
 
-void IRAM_ATTR dma_end_callback(spi_transaction_t *spi_tx)
+void dma_end_callback(spi_transaction_t *spi_tx)
 {
   WRITE_PERI_REG(SPI_DMA_CONF_REG(spi_host), 0);
 }

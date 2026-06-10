@@ -1,8 +1,12 @@
 #include "led_controller.h"
 #include "led_calib.h"
+#include "config.h"
 #include "pins.h"
-#include <WS2812FX.h>
 #include <Arduino.h>
+
+#if ENABLE_LED_STRIP
+
+#include <WS2812FX.h>
 
 static WS2812FX ws2812fx(LED_COUNT, PIN_LED_DATA, NEO_GRB + NEO_KHZ800);
 static bool partyActive = false;
@@ -209,3 +213,39 @@ void led_calib_set_index(uint16_t idx)
 }
 
 } /* extern "C" */
+
+#else /* !ENABLE_LED_STRIP */
+
+const char *led_effect_name(lamp_effect_t effect)
+{
+    (void)effect;
+    return "Solido";
+}
+
+void led_controller_init(void) {}
+void led_controller_set_output_paused(bool paused) { (void)paused; }
+bool led_controller_output_paused(void) { return true; }
+void led_controller_apply(lamp_state_t *state) { if (state) state->dirty = false; }
+void led_controller_set_speed(uint16_t speed) { (void)speed; }
+void led_controller_set_reverse(bool reverse) { (void)reverse; }
+uint16_t led_controller_get_speed(void) { return 200; }
+bool led_controller_get_reverse(void) { return false; }
+void led_controller_service(void) {}
+void led_controller_set_party_pixels(const uint8_t *rgb, uint16_t count)
+{
+    (void)rgb;
+    (void)count;
+}
+
+extern "C" {
+
+bool led_calib_is_active(void) { return false; }
+void led_calib_set_active(bool active) { (void)active; }
+uint16_t led_calib_get_index(void) { return 0; }
+uint16_t led_calib_get_count(void) { return LED_COUNT; }
+bool led_calib_step(int delta) { (void)delta; return false; }
+void led_calib_set_index(uint16_t idx) { (void)idx; }
+
+} /* extern "C" */
+
+#endif

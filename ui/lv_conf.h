@@ -472,7 +472,7 @@
 
 #define LV_USE_BTNMATRIX  0
 
-#define LV_USE_CANVAS     1   /*Requerido por LV_USE_QRCODE*/
+#define LV_USE_CANVAS     0
 
 #define LV_USE_CHECKBOX   0
 
@@ -623,7 +623,7 @@
 #define LV_USE_GIF 0
 
 /*QR code library*/
-#define LV_USE_QRCODE 1
+#define LV_USE_QRCODE 0
 
 /*FreeType library*/
 #define LV_USE_FREETYPE 0

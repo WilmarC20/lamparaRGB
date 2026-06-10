@@ -44,4 +44,7 @@
 
 #define PIN_IR       22
 
+/* Altavoz onboard (JST P4) -> FM8002A, DAC2 */
+#define PIN_SPEAKER  26
+
 #endif

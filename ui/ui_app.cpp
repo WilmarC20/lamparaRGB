@@ -9,6 +9,7 @@
 #include "music_effects.h"
 #include "ui_effects.h"
 #include "audio_input.h"
+#include "audio_output.h"
 #include "led_layout.h"
 #include "pins.h"
 #include "rainmaker_app.h"
@@ -19,6 +20,8 @@
 #include "ui_config_screen.h"
 #include "ui_control_screen.h"
 #include "ui_settings.h"
+#include "ui_radio_screen.h"
+#include "radio_player.h"
 #include "ui_prov_screen.h"
 #if RM_PROV_UI_NO_LVGL
 #include "ui_prov_raw.h"
@@ -109,6 +112,7 @@ static void ui_app_led_calib_refresh_ui(void);
 static void apply_and_report(void);
 static void update_status_label(void);
 static void ui_app_start_ntp(void);
+static void ui_app_sync_radio_ui(void);
 static void ui_app_update_wifi_display(void);
 static void ui_app_update_header_clock(void);
 static void on_brightness_changed(lv_event_t *e);
@@ -567,6 +571,15 @@ static void on_night_mode_changed(lv_event_t *e)
     }
 }
 
+static void on_speaker_test_clicked(lv_event_t *e)
+{
+    if (lv_event_get_code(e) != LV_EVENT_CLICKED) {
+        return;
+    }
+    audio_output_play_test();
+    ui_app_sync_radio_ui();
+}
+
 static void on_start_prov(lv_event_t *e)
 {
     if (lv_event_get_code(e) != LV_EVENT_CLICKED) return;
@@ -614,6 +627,12 @@ static void bind_config_events(void)
     if (nightSw) {
         lv_obj_add_event_cb(nightSw, on_night_mode_changed, LV_EVENT_VALUE_CHANGED, NULL);
     }
+#if ENABLE_SPEAKER
+    lv_obj_t *speakerRow = ui_config_get_speaker_row();
+    if (speakerRow) {
+        lv_obj_add_event_cb(speakerRow, on_speaker_test_clicked, LV_EVENT_CLICKED, NULL);
+    }
+#endif
 }
 
 static void bind_settings_tab(void)
@@ -853,18 +872,108 @@ static void on_preset_clicked(lv_event_t *e)
     apply_and_report();
 }
 
+static void ui_app_sync_radio_ui(void)
+{
+#if ENABLE_RADIO
+    const int idx = radio_player_get_station();
+    const bool playing = radio_player_is_playing();
+    if (playing && idx >= 0) {
+        ui_radio_highlight_station(idx);
+        ui_radio_update_now_playing(radio_player_station_name((uint8_t)idx),
+                                    radio_player_status_text());
+    } else {
+        ui_radio_highlight_station(-1);
+        ui_radio_update_now_playing(NULL, radio_player_status_text());
+    }
+    ui_radio_update_play_btn(playing);
+    ui_radio_set_volume_pct(radio_player_get_volume());
+#endif
+}
+
+static void on_radio_station_clicked(lv_event_t *e)
+{
+    if (lv_event_get_code(e) != LV_EVENT_CLICKED) {
+        return;
+    }
+#if ENABLE_RADIO
+    const intptr_t ud = (intptr_t)lv_event_get_user_data(e);
+    if (ud <= 0) {
+        return;
+    }
+    const uint8_t idx = (uint8_t)(ud - 1);
+    radio_player_toggle(idx);
+    ui_app_sync_radio_ui();
+#endif
+}
+
+static void on_radio_stop_clicked(lv_event_t *e)
+{
+    if (lv_event_get_code(e) != LV_EVENT_CLICKED) {
+        return;
+    }
+#if ENABLE_RADIO
+    radio_player_stop();
+    ui_app_sync_radio_ui();
+#endif
+}
+
+static void on_radio_play_clicked(lv_event_t *e)
+{
+    if (lv_event_get_code(e) != LV_EVENT_CLICKED) {
+        return;
+    }
+#if ENABLE_RADIO
+    const int idx = radio_player_get_station();
+    if (idx >= 0) {
+        radio_player_play((uint8_t)idx);
+    }
+    ui_app_sync_radio_ui();
+#endif
+}
+
+static void on_radio_volume_changed(lv_event_t *e)
+{
+    if (lv_event_get_code(e) != LV_EVENT_VALUE_CHANGED) {
+        return;
+    }
+#if ENABLE_RADIO
+    const lv_obj_t *slider = lv_event_get_target(e);
+    const uint8_t pct = (uint8_t)lv_slider_get_value(slider);
+    radio_player_set_volume(pct);
+    ui_radio_set_volume_pct(pct);
+#endif
+}
+
+static void bind_radio_tab(void)
+{
+#if ENABLE_RADIO
+    radio_player_set_volume(75);
+    ui_radio_bind_station_cb(on_radio_station_clicked);
+    ui_radio_bind_stop_cb(on_radio_stop_clicked);
+    ui_radio_bind_play_cb(on_radio_play_clicked);
+    ui_radio_bind_volume_cb(on_radio_volume_changed);
+    ui_app_sync_radio_ui();
+#endif
+}
+
 static void on_tab_nav_clicked(lv_event_t *e)
 {
     if (lv_event_get_code(e) != LV_EVENT_CLICKED) return;
     const uint8_t tab = (uint8_t)(intptr_t)lv_event_get_user_data(e);
-    onConfigScreen = (tab == 2);
+    onConfigScreen = (tab == UI_TAB_SETTINGS);
     ui_set_active_tab(tab);
-    if (tab == 1) {
+    if (tab == UI_TAB_EFFECTS) {
         ui_highlight_effect(ui_effect_dropdown_index(&appState));
         ui_app_sync_effect_color_bar();
-    } else if (tab == 2) {
+    } else if (tab == UI_TAB_RADIO) {
+        ui_app_sync_radio_ui();
+    } else if (tab == UI_TAB_SETTINGS) {
         ui_app_ensure_settings_audio();
-    } else if (!lamp_state_music_active(&appState) && audio_input_is_running()) {
+    } else if (!lamp_state_music_active(&appState) && audio_input_is_running()
+#if ENABLE_RADIO
+               && !radio_player_is_playing() && !radio_player_is_busy()
+#endif
+    ) {
         audio_input_stop();
         audioStarted = false;
     }
@@ -939,7 +1048,8 @@ void ui_app_setup(void)
                                   on_tab_nav_clicked,
                                   on_speed_changed,
                                   on_dir_clicked,
-                                  bind_settings_tab);
+                                  bind_settings_tab,
+                                  bind_radio_tab);
     ui_init();
     LAMP_LOG("UI init heap=%u\n", ESP.getFreeHeap());
     Serial.flush();
@@ -947,6 +1057,10 @@ void ui_app_setup(void)
     ui_app_sync_from_state();
 
     audio_input_init();
+    audio_output_init();
+#if ENABLE_RADIO
+    radio_player_init();
+#endif
     ui_settings_init();
 
     for (int i = 0; i < 8; i++) {
@@ -956,13 +1070,20 @@ void ui_app_setup(void)
     LAMP_LOG("UI lista heap=%u\n", ESP.getFreeHeap());
     Serial.flush();
 
+#if ENABLE_LED_STRIP
     led_controller_init();
     LAMP_LOG("LED OK heap=%u\n", ESP.getFreeHeap());
+#else
+    LAMP_LOG("LED desactivado (GPIO1=Serial) heap=%u\n", ESP.getFreeHeap());
+#endif
     Serial.flush();
 
     apply_and_report();
 #if ENABLE_RAINMAKER
     rainmaker_app_on_ui_ready();
+#endif
+#if ENABLE_SPEAKER && SPEAKER_TEST_AT_BOOT
+    audio_output_play_test();
 #endif
 #if !ENABLE_RAINMAKER
     audioStartMs = millis() + AUDIO_START_DELAY_MS;
@@ -971,6 +1092,10 @@ void ui_app_setup(void)
 
 void ui_app_loop(void)
 {
+#if ENABLE_RADIO
+    radio_player_loop();
+#endif
+
 #if ENABLE_RAINMAKER
     if (provUiBoot) {
         prov_load_tick();
@@ -1076,6 +1201,7 @@ void ui_app_loop(void)
         }
     }
 
+#if ENABLE_LED_STRIP
     if (!led_calib_is_active()) {
         if (appState.dirty) {
             led_controller_apply(&appState);
@@ -1087,8 +1213,26 @@ void ui_app_loop(void)
             led_controller_service();
         }
     }
+#endif
 
     ir_control_service();
+
+#if ENABLE_RADIO
+    if (radio_player_is_playing() || radio_player_is_busy()) {
+        if (audio_input_is_running()) {
+            audio_input_stop();
+            audioStarted = false;
+        }
+    }
+    if (ui_is_radio_tab()) {
+        static uint32_t s_lastRadioUiMs = 0;
+        const uint32_t nowRadio = millis();
+        if ((nowRadio - s_lastRadioUiMs) >= 500U) {
+            s_lastRadioUiMs = nowRadio;
+            ui_app_sync_radio_ui();
+        }
+    }
+#endif
 
     if (onConfigScreen && audio_input_is_running()) {
         static uint32_t s_lastMicUiMs = 0;
@@ -1114,7 +1258,11 @@ void ui_app_loop(void)
     }
 #if AUDIO_START_ON_PARTY || AUDIO_START_ON_MUSIC_BAR
     if (!audioStarted && lamp_state_music_active(&appState) && appState.power && !onProvScreen &&
-        !rainmaker_app_provisioning_active()) {
+        !rainmaker_app_provisioning_active()
+#if ENABLE_RADIO
+        && !radio_player_is_playing() && !radio_player_is_busy()
+#endif
+    ) {
         audioStarted = true;
         audio_input_start();
     }
@@ -1123,6 +1271,11 @@ void ui_app_loop(void)
         if (rainmaker_app_provisioning_active() || rainmaker_app_prov_started()) {
             /* sin audio durante prov */
         } else
+#if ENABLE_RADIO
+        if (radio_player_is_playing() || radio_player_is_busy()) {
+            /* mic apagado mientras suena la radio */
+        } else
+#endif
 #if AUDIO_START_AFTER_WIFI
         if (rainmaker_app_is_online()) {
             audioStarted = true;
@@ -1147,13 +1300,23 @@ void ui_app_loop(void)
 #endif
 #if AUDIO_START_ON_PARTY || AUDIO_START_ON_MUSIC_BAR
     if (!audioStarted && lamp_state_music_active(&appState) && appState.power) {
-        audioStarted = true;
-        audio_input_start();
+#if ENABLE_RADIO
+        if (!radio_player_is_playing() && !radio_player_is_busy())
+#endif
+        {
+            audioStarted = true;
+            audio_input_start();
+        }
     }
 #endif
     if (!audioStarted && (int32_t)(millis() - audioStartMs) >= 0) {
-        audioStarted = true;
-        audio_input_start();
+#if ENABLE_RADIO
+        if (!radio_player_is_playing() && !radio_player_is_busy())
+#endif
+        {
+            audioStarted = true;
+            audio_input_start();
+        }
     }
 #endif
     delay(2);
