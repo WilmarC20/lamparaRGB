@@ -47,17 +47,31 @@
 #define AUDIO_SILENCE_LEVEL  200
 
 /* 0 = sin WS2812 (GPIO 1 queda libre para Serial; usar mientras pruebas radio) */
-#define ENABLE_LED_STRIP       0
+#define ENABLE_LED_STRIP       1
 
 /* Altavoz onboard ESP32-2432S024C (GPIO 26 -> FM8002A) */
 #define ENABLE_SPEAKER         1
 #define SPEAKER_TEST_AT_BOOT   0
 
-/* Radio en linea Colombia (minimp3 + NetworkClient en tarea aparte) */
-#define ENABLE_RADIO           1
+/* Radio en linea Colombia (ESP32-audioI2S, DAC GPIO 26).
+ * 0 = radio oculta por completo: sin tab en la UI, sin libreria de audio
+ * compilada, cero RAM/flash. Volver a 1 para retomarla. */
+#define ENABLE_RADIO           0
+/* Volumen inicial emisora (0-100 %); unico lugar para cambiarlo */
+#define RADIO_DEFAULT_VOLUME_PCT  9
+#define RADIO_VOLUME_PCT_TO_IDX(pct) ((uint8_t)(((unsigned)(pct) * 21U + 50U) / 100U))
 
 /* Salida Serial del firmware (0 = silencio total en nuestro codigo) */
 #define LAMP_SERIAL_LOG      1
+
+/* GPIO 1 = Serial TX y data WS2812: con la cinta activa, cada byte de log
+ * (firmware o ESP-IDF) entra a la cinta como datos -> flashes aleatorios,
+ * picos de corriente y ruido en el altavoz. Log forzado a 0 con cinta.
+ * Para depurar por consola: poner ENABLE_LED_STRIP en 0. */
+#if ENABLE_LED_STRIP
+#undef LAMP_SERIAL_LOG
+#define LAMP_SERIAL_LOG      0
+#endif
 
 /* Log en Serial al pulsar mando IR */
 #define IR_DEBUG_LOG         0

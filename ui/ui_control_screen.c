@@ -1,4 +1,5 @@
 #include "ui_control_screen.h"
+#include "config.h"
 #include "ui_config_screen.h"
 #include "ui_effects.h"
 #include "ui_radio_screen.h"
@@ -365,7 +366,7 @@ static void build_color_tab(lv_obj_t *parent)
     lv_obj_clear_flag(toggleRow, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_clear_flag(toggleRow, LV_OBJ_FLAG_CLICKABLE);
 
-    make_toggle_panel(toggleRow, LV_SYMBOL_REFRESH, "MODO FIESTA", &ui_SwitchFiesta, 89);
+    make_toggle_panel(toggleRow, LV_SYMBOL_AUDIO, "MODO MUSICA", &ui_SwitchFiesta, 89);
     make_toggle_panel(toggleRow, LV_SYMBOL_POWER, "ENCENDIDO", &ui_SwitchPower, 89);
     lv_obj_add_state(ui_SwitchPower, LV_STATE_CHECKED);
 
@@ -417,10 +418,33 @@ static lv_obj_t *make_effect_list_btn(lv_obj_t *parent, uint16_t idx)
     lv_obj_set_style_pad_column(btn, 4, LV_PART_MAIN);
     lv_obj_add_flag(btn, LV_OBJ_FLAG_CHECKABLE);
 
-    lv_obj_t *ico = lv_label_create(btn);
-    lv_label_set_text(ico, ui_effect_icon_at(idx));
-    lv_obj_set_style_text_color(ico, lv_color_hex(ui_effect_icon_color(idx)), LV_PART_MAIN);
-    lv_obj_set_style_text_color(ico, lv_color_hex(UI_COLOR_TEXT), LV_PART_MAIN | LV_STATE_CHECKED);
+    lv_obj_t *ico;
+    if (ui_effect_uses_flag_icon(idx)) {
+        static const uint32_t kFlagStripColors[] = { 0xFCD116, 0x003876, 0xCE1126 };
+        ico = lv_obj_create(btn);
+        lv_obj_set_size(ico, 14, 12);
+        lv_obj_set_style_bg_opa(ico, LV_OPA_TRANSP, LV_PART_MAIN);
+        lv_obj_set_style_border_width(ico, 0, LV_PART_MAIN);
+        lv_obj_set_style_pad_all(ico, 0, LV_PART_MAIN);
+        lv_obj_clear_flag(ico, LV_OBJ_FLAG_SCROLLABLE);
+        lv_obj_clear_flag(ico, LV_OBJ_FLAG_CLICKABLE);
+        for (int s = 0; s < 3; s++) {
+            lv_obj_t *strip = lv_obj_create(ico);
+            lv_obj_set_size(strip, 14, 4);
+            lv_obj_set_pos(strip, 0, s * 4);
+            lv_obj_set_style_bg_color(strip, lv_color_hex(kFlagStripColors[s]), LV_PART_MAIN);
+            lv_obj_set_style_bg_opa(strip, LV_OPA_COVER, LV_PART_MAIN);
+            lv_obj_set_style_border_width(strip, 0, LV_PART_MAIN);
+            lv_obj_set_style_radius(strip, 0, LV_PART_MAIN);
+            lv_obj_set_style_pad_all(strip, 0, LV_PART_MAIN);
+            lv_obj_clear_flag(strip, LV_OBJ_FLAG_CLICKABLE);
+        }
+    } else {
+        ico = lv_label_create(btn);
+        lv_label_set_text(ico, ui_effect_icon_at(idx));
+        lv_obj_set_style_text_color(ico, lv_color_hex(ui_effect_icon_color(idx)), LV_PART_MAIN);
+        lv_obj_set_style_text_color(ico, lv_color_hex(UI_COLOR_TEXT), LV_PART_MAIN | LV_STATE_CHECKED);
+    }
 
     lv_obj_t *lbl = lv_label_create(btn);
     lv_label_set_text(lbl, ui_effect_name_at(idx));
@@ -652,6 +676,17 @@ static void build_nav_bar(lv_obj_t *parent)
     static const char *kNavIcons[] = {
         LV_SYMBOL_TINT, LV_SYMBOL_SHUFFLE, LV_SYMBOL_VOLUME_MAX, LV_SYMBOL_SETTINGS
     };
+    /* Tabs visibles: RADIO se omite con ENABLE_RADIO=0 (el resto del codigo
+     * de radio compila a stubs vacios, sin RAM ni flash). */
+    static const uint8_t kNavVisible[] = {
+        UI_TAB_COLOR,
+        UI_TAB_EFFECTS,
+#if ENABLE_RADIO
+        UI_TAB_RADIO,
+#endif
+        UI_TAB_SETTINGS,
+    };
+    const int navCount = (int)(sizeof(kNavVisible) / sizeof(kNavVisible[0]));
 
     s_navBar = lv_obj_create(parent);
     lv_obj_set_size(s_navBar, kScreenWidth, UI_NAV_H);
@@ -661,36 +696,38 @@ static void build_nav_bar(lv_obj_t *parent)
     lv_obj_set_style_pad_all(s_navBar, 0, LV_PART_MAIN);
     lv_obj_clear_flag(s_navBar, LV_OBJ_FLAG_SCROLLABLE);
 
-    const int btnW = kScreenWidth / UI_NAV_TABS;
-    for (int i = 0; i < UI_NAV_TABS; i++) {
-        s_navIndicators[i] = lv_obj_create(s_navBar);
-        lv_obj_set_size(s_navIndicators[i], btnW - 12, 2);
-        lv_obj_set_pos(s_navIndicators[i], i * btnW + 6, 0);
-        lv_obj_set_style_bg_color(s_navIndicators[i], lv_color_hex(UI_COLOR_ACCENT), LV_PART_MAIN);
-        lv_obj_set_style_border_width(s_navIndicators[i], 0, LV_PART_MAIN);
-        lv_obj_set_style_radius(s_navIndicators[i], 1, LV_PART_MAIN);
-        lv_obj_clear_flag(s_navIndicators[i], LV_OBJ_FLAG_CLICKABLE);
-        if (i != 0) {
-            lv_obj_add_flag(s_navIndicators[i], LV_OBJ_FLAG_HIDDEN);
+    const int btnW = kScreenWidth / navCount;
+    for (int n = 0; n < navCount; n++) {
+        const uint8_t tab = kNavVisible[n];
+
+        s_navIndicators[tab] = lv_obj_create(s_navBar);
+        lv_obj_set_size(s_navIndicators[tab], btnW - 12, 2);
+        lv_obj_set_pos(s_navIndicators[tab], n * btnW + 6, 0);
+        lv_obj_set_style_bg_color(s_navIndicators[tab], lv_color_hex(UI_COLOR_ACCENT), LV_PART_MAIN);
+        lv_obj_set_style_border_width(s_navIndicators[tab], 0, LV_PART_MAIN);
+        lv_obj_set_style_radius(s_navIndicators[tab], 1, LV_PART_MAIN);
+        lv_obj_clear_flag(s_navIndicators[tab], LV_OBJ_FLAG_CLICKABLE);
+        if (tab != UI_TAB_COLOR) {
+            lv_obj_add_flag(s_navIndicators[tab], LV_OBJ_FLAG_HIDDEN);
         }
 
-        s_navBtns[i] = lv_btn_create(s_navBar);
-        lv_obj_set_size(s_navBtns[i], btnW, UI_NAV_H);
-        lv_obj_set_pos(s_navBtns[i], i * btnW, 0);
-        lv_obj_set_style_bg_opa(s_navBtns[i], LV_OPA_TRANSP, LV_PART_MAIN);
-        lv_obj_set_style_shadow_width(s_navBtns[i], 0, LV_PART_MAIN);
-        lv_obj_set_style_radius(s_navBtns[i], 0, LV_PART_MAIN);
-        lv_obj_set_style_pad_all(s_navBtns[i], 0, LV_PART_MAIN);
-        lv_obj_set_flex_flow(s_navBtns[i], LV_FLEX_FLOW_COLUMN);
-        lv_obj_set_flex_align(s_navBtns[i], LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-        lv_obj_set_style_pad_row(s_navBtns[i], 0, LV_PART_MAIN);
+        s_navBtns[tab] = lv_btn_create(s_navBar);
+        lv_obj_set_size(s_navBtns[tab], btnW, UI_NAV_H);
+        lv_obj_set_pos(s_navBtns[tab], n * btnW, 0);
+        lv_obj_set_style_bg_opa(s_navBtns[tab], LV_OPA_TRANSP, LV_PART_MAIN);
+        lv_obj_set_style_shadow_width(s_navBtns[tab], 0, LV_PART_MAIN);
+        lv_obj_set_style_radius(s_navBtns[tab], 0, LV_PART_MAIN);
+        lv_obj_set_style_pad_all(s_navBtns[tab], 0, LV_PART_MAIN);
+        lv_obj_set_flex_flow(s_navBtns[tab], LV_FLEX_FLOW_COLUMN);
+        lv_obj_set_flex_align(s_navBtns[tab], LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+        lv_obj_set_style_pad_row(s_navBtns[tab], 0, LV_PART_MAIN);
 
-        lv_obj_t *ico = lv_label_create(s_navBtns[i]);
-        lv_label_set_text(ico, kNavIcons[i]);
+        lv_obj_t *ico = lv_label_create(s_navBtns[tab]);
+        lv_label_set_text(ico, kNavIcons[tab]);
         lv_obj_set_style_text_font(ico, &lv_font_montserrat_14, LV_PART_MAIN);
 
-        lv_obj_t *lbl = lv_label_create(s_navBtns[i]);
-        lv_label_set_text(lbl, kNavLabels[i]);
+        lv_obj_t *lbl = lv_label_create(s_navBtns[tab]);
+        lv_label_set_text(lbl, kNavLabels[tab]);
         lv_obj_set_style_text_font(lbl, &lv_font_montserrat_14, LV_PART_MAIN);
     }
 }

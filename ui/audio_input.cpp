@@ -40,6 +40,9 @@ static bool s_testMode = false;
 static int s_micThreshold = AUDIO_MIC_THRESHOLD;
 static int s_silenceLevel = AUDIO_SILENCE_LEVEL;
 
+/* Pipeline de analisis comun (definido mas abajo); adc_task lo usa antes */
+static void audio_process_ac(int ac);
+
 #if AUDIO_USE_LEGACY_ADC
 /* GPIO 35 = ADC1_CH7; mismo driver legacy que I2S/DAC interno de ESP32-audioI2S */
 static adc1_channel_t mic_adc_channel(void)
@@ -124,6 +127,8 @@ static void adc_task(void *param)
         const int ac = raw - dc;
         const int acAbs = abs(ac);
 
+        audio_process_ac(ac);
+
         emaAbs += (acAbs - emaAbs) >> AUDIO_EMA_SHIFT;
         s_soundLevel = level_from_abs(emaAbs);
 
@@ -140,6 +145,190 @@ static void adc_task(void *param)
         }
 
         vTaskDelayUntil(&lastWake, period);
+    }
+}
+
+/* --- Analisis comun (mic ~1 kHz o radio ~1.4 kHz decimada) ---
+ * Nivel global, graves (LPF 1 polo), brillos (residuo HPF) y beats
+ * (energia de graves sobre su promedio lento). AGC por caracteristica. */
+
+#define PROC_PEAK_FLOOR 48
+#define PROC_NORM_TOP   304   /* sobre rango util MUSIC_LEVEL_MAX=400 */
+
+static volatile int s_procLevel = 0;
+static volatile int s_procBass = 0;
+static volatile int s_procHigh = 0;
+static volatile uint32_t s_procBeatCount = 0;
+
+static int s_procLpf = 0;
+static int s_procLevelEma = 0;
+static int s_procBassEma = 0;
+static int s_procHighEma = 0;
+static int s_procBassAvg = 0;
+static int s_peakLevel = PROC_PEAK_FLOOR;
+static int s_peakBass = PROC_PEAK_FLOOR;
+static int s_peakHigh = PROC_PEAK_FLOOR;
+static uint32_t s_lastBeatMs = 0;
+
+static int proc_normalize(int ema, int *peak)
+{
+    if (ema > *peak) {
+        *peak = ema;
+    } else if (*peak > PROC_PEAK_FLOOR) {
+        *peak -= ((*peak - PROC_PEAK_FLOOR) >> 11) + 1;
+    }
+    int norm = (ema * PROC_NORM_TOP) / *peak;
+    if (norm > 400) {
+        norm = 400;
+    }
+    return norm;
+}
+
+static void proc_reset(void)
+{
+    s_procLpf = 0;
+    s_procLevelEma = 0;
+    s_procBassEma = 0;
+    s_procHighEma = 0;
+    s_procBassAvg = 0;
+    s_peakLevel = PROC_PEAK_FLOOR;
+    s_peakBass = PROC_PEAK_FLOOR;
+    s_peakHigh = PROC_PEAK_FLOOR;
+    s_procLevel = 0;
+    s_procBass = 0;
+    s_procHigh = 0;
+}
+
+static void audio_process_ac(int ac)
+{
+    const int acAbs = ac < 0 ? -ac : ac;
+
+    s_procLevelEma += (acAbs - s_procLevelEma) >> AUDIO_EMA_SHIFT;
+
+    /* Graves: LPF alpha 1/4 (~40-60 Hz con muestreo ~1 kHz) */
+    s_procLpf += (ac - s_procLpf) >> 2;
+    const int bassAbs = s_procLpf < 0 ? -s_procLpf : s_procLpf;
+    s_procBassEma += (bassAbs - s_procBassEma) >> 3;
+
+    /* Brillos: residuo paso-alto */
+    const int hp = ac - s_procLpf;
+    const int highAbs = hp < 0 ? -hp : hp;
+    s_procHighEma += (highAbs - s_procHighEma) >> 3;
+
+    s_procLevel = proc_normalize(s_procLevelEma, &s_peakLevel);
+    s_procBass = proc_normalize(s_procBassEma, &s_peakBass);
+    s_procHigh = proc_normalize(s_procHighEma, &s_peakHigh);
+
+    /* Beat: energia de graves 1.5x sobre su promedio lento (~0.5 s),
+     * con refractario de 200 ms (max ~300 BPM) */
+    s_procBassAvg += (s_procBassEma - s_procBassAvg) >> 9;
+    const uint32_t now = millis();
+    if (s_procBassEma > s_procBassAvg + (s_procBassAvg >> 1) &&
+        s_procBassEma > 8 && (now - s_lastBeatMs) > 200U) {
+        s_lastBeatMs = now;
+        s_procBeatCount++;
+    }
+}
+
+int audio_input_get_norm_level(void)
+{
+    return s_procLevel;
+}
+
+int audio_input_get_norm_bass(void)
+{
+    return s_procBass;
+}
+
+int audio_input_get_norm_high(void)
+{
+    return s_procHigh;
+}
+
+uint32_t audio_input_get_beat_count(void)
+{
+    return s_procBeatCount;
+}
+
+/* --- Fuente externa: PCM de la radio (pre-volumen) en vez del mic --- */
+
+/* 1 de cada 32 muestras (~1.4 kHz a 44.1k, similar a la cadencia del mic) */
+#define EXT_DECIMATE 32
+/* 16-bit con signo -> rango ~+-512, comparable al AC del ADC de 12 bits */
+#define EXT_SHIFT    6
+
+/* AGC: piso del pico (evita division ~0 y dispara con señal minima) */
+#define EXT_PEAK_FLOOR  64
+/* Nivel cuando la señal toca su pico (max util MUSIC_LEVEL_MAX=400).
+ * 304 = 380 * 0.8: sensibilidad reducida 20% a pedido del usuario. */
+#define EXT_LEVEL_TOP   304
+
+static volatile bool s_extActive = false;
+static int16_t s_extBuf[AUDIO_BLOCK_LEN];
+static size_t s_extIdx = 0;
+static uint32_t s_extDecim = 0;
+static int s_extEma = 0;
+static int s_extPeak = EXT_PEAK_FLOOR;
+
+void audio_input_set_external_source(bool enable)
+{
+    s_extActive = enable;
+    s_extIdx = 0;
+    s_extDecim = 0;
+    s_extEma = 0;
+    s_extPeak = EXT_PEAK_FLOOR;
+    proc_reset();
+    portENTER_CRITICAL(&levelsMux);
+    memset(&latestLevels, 0, sizeof(latestLevels));
+    portEXIT_CRITICAL(&levelsMux);
+    s_soundLevel = 0;
+    s_soundSpan = 0;
+}
+
+bool audio_input_external_active(void)
+{
+    return s_extActive;
+}
+
+void audio_input_feed_external(int16_t left, int16_t right)
+{
+    if (!s_extActive) {
+        return;
+    }
+    if (++s_extDecim < EXT_DECIMATE) {
+        return;
+    }
+    s_extDecim = 0;
+
+    const int mono = ((int)left + (int)right) / 2;
+    const int ac = mono >> EXT_SHIFT;
+    const int acAbs = ac < 0 ? -ac : ac;
+
+    audio_process_ac(ac);
+
+    s_extEma += (acAbs - s_extEma) >> AUDIO_EMA_SHIFT;
+
+    /* AGC: normalizar contra el pico reciente (decae en ~1.5 s) para que
+     * los efectos usen todo el rango sin importar el nivel del stream. */
+    if (s_extEma > s_extPeak) {
+        s_extPeak = s_extEma;
+    } else if (s_extPeak > EXT_PEAK_FLOOR) {
+        s_extPeak -= ((s_extPeak - EXT_PEAK_FLOOR) >> 11) + 1;
+    }
+    int level = (s_extEma * EXT_LEVEL_TOP) / s_extPeak;
+    if (level > 400) {
+        level = 400;
+    }
+    s_soundLevel = level;
+
+    s_extBuf[s_extIdx++] = (int16_t)ac;
+    if (s_extIdx >= AUDIO_BLOCK_LEN) {
+        audio_levels_t levels;
+        compute_levels(s_extBuf, AUDIO_BLOCK_LEN, &levels);
+        portENTER_CRITICAL(&levelsMux);
+        latestLevels = levels;
+        portEXIT_CRITICAL(&levelsMux);
+        s_extIdx = 0;
     }
 }
 
@@ -166,6 +355,7 @@ void audio_input_start(void)
     s_soundLevel = 0;
     s_soundSpan = 0;
     s_dcOffset = 2048;
+    proc_reset();
 #if AUDIO_USE_LEGACY_ADC
     adc1_config_width(ADC_WIDTH_BIT_12);
     adc1_config_channel_atten(mic_adc_channel(), ADC_ATTEN_DB_11);
@@ -213,6 +403,10 @@ int audio_input_get_sound_level(void)
 
 int audio_input_get_music_level(void)
 {
+    if (s_extActive) {
+        /* PCM de radio: señal limpia, sin resta de ruido ambiente */
+        return s_soundLevel;
+    }
     int level = s_soundLevel - s_silenceLevel;
     if (level < 0) {
         level = 0;

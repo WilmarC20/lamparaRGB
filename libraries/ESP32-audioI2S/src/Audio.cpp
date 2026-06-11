@@ -177,7 +177,7 @@ Audio::Audio(bool internalDAC /* = false */, uint8_t channelEnabled /* = I2S_DAC
     m_i2s_config.channel_format       = I2S_CHANNEL_FMT_RIGHT_LEFT;
     m_i2s_config.intr_alloc_flags     = ESP_INTR_FLAG_LEVEL1; // high interrupt priority
     m_i2s_config.dma_buf_count        = 8;      // max buffers
-    m_i2s_config.dma_buf_len          = 1024;   // max value
+    m_i2s_config.dma_buf_len          = 512;    // LamparaV3: 1024 -> 512 (16 KB DMA en vez de 32 KB; ~93 ms de colchon a 44.1 kHz estereo)
     m_i2s_config.use_apll             = APLL_DISABLE; // must be disabled in V2.0.1-RC1
     m_i2s_config.tx_desc_auto_clear   = true;   // new in V1.0.1
     m_i2s_config.fixed_mclk           = I2S_PIN_NO_CHANGE;
@@ -4233,6 +4233,9 @@ bool Audio::playSample(int16_t sample[2]) {
         sample[LEFTCHANNEL]  = ((sample[LEFTCHANNEL]  & 0xff) -128) << 8;
         sample[RIGHTCHANNEL] = ((sample[RIGHTCHANNEL] & 0xff) -128) << 8;
     }
+
+    // LamparaV3: tap pre-volume so LED levels are independent of setVolume()
+    if(audio_tap_sample) audio_tap_sample(sample[LEFTCHANNEL], sample[RIGHTCHANNEL]);
 
     if (!m_f_internalDAC) {
         sample[LEFTCHANNEL]  = sample[LEFTCHANNEL]  >> 1; // headroom for EQ on external I2S

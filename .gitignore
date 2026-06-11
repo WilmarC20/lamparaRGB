@@ -14,3 +14,13 @@ Thumbs.db
 
 # Secrets (override locally if needed)
 # ui/config.local.h
+
+# ESP Insights package (regenerado en cada build)
+*.ino.zip
+
+# Engram: memoria local / export sync (DB canonica en ~/.engram)
+.engram/
+
+# JVM crash dumps (arduino-cli)
+hs_err_pid*.log
+replay_pid*.log

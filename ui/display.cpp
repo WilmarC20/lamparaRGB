@@ -17,6 +17,7 @@ const uint16_t kScreenHeight = 240;
 static lv_disp_draw_buf_t draw_buf;
 static lv_color_t *disp_buf = NULL;
 static bool s_lvglSuspended = false;
+static bool s_backlightOn = true;
 static TFT_eSPI tft = TFT_eSPI(kScreenWidth, kScreenHeight);
 
 extern "C" void display_draw_rgb565_rect(int16_t x, int16_t y, int16_t w, int16_t h,
@@ -98,6 +99,17 @@ extern "C" void display_clear(uint16_t color565)
     tft.startWrite();
     tft.fillScreen(color565);
     tft.endWrite();
+}
+
+extern "C" void display_set_backlight(bool on)
+{
+    s_backlightOn = on;
+    digitalWrite(PIN_TFT_BL, on ? HIGH : LOW);
+}
+
+extern "C" bool display_backlight_on(void)
+{
+    return s_backlightOn;
 }
 
 extern "C" void display_init_tft_only(void)

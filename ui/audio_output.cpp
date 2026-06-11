@@ -26,6 +26,15 @@ static void speaker_silence(void)
     dacWrite(PIN_SPEAKER, 128);
 }
 
+/* Reposo: DAC apagado y pin a GND. Con el DAC en media escala el FM8002A
+ * queda polarizado amplificando el ruido de rail (LEDs, WiFi, tactil). */
+static void speaker_quiet(void)
+{
+    dacDisable(PIN_SPEAKER);
+    pinMode(PIN_SPEAKER, OUTPUT);
+    digitalWrite(PIN_SPEAKER, LOW);
+}
+
 static void play_tone_dac(uint16_t freq_hz, uint16_t duration_ms, uint8_t amplitude)
 {
     if (freq_hz == 0 || duration_ms == 0) {
@@ -87,7 +96,7 @@ static void speaker_test_task(void *param)
         vTaskDelay(pdMS_TO_TICKS(25));
     }
 
-    speaker_silence();
+    speaker_quiet();
 #if ENABLE_LED_STRIP
     led_controller_set_output_paused(false);
 #endif
@@ -99,9 +108,18 @@ static void speaker_test_task(void *param)
     vTaskDelete(NULL);
 }
 
+void audio_output_boot_silence(void)
+{
+    pinMode(PIN_SPEAKER, OUTPUT);
+    digitalWrite(PIN_SPEAKER, LOW);
+#if !ENABLE_RADIO
+    dacDisable(PIN_SPEAKER);
+#endif
+}
+
 void audio_output_init(void)
 {
-    speaker_silence();
+    speaker_quiet();
 }
 
 bool audio_output_is_playing(void)
@@ -122,6 +140,7 @@ void audio_output_play_test(void)
 
 #else
 
+void audio_output_boot_silence(void) {}
 void audio_output_init(void) {}
 bool audio_output_is_playing(void) { return false; }
 void audio_output_play_test(void) {}

@@ -31,6 +31,10 @@ bool display_lvgl_suspended(void);
 /** Texto corto arriba cuando LVGL suspendido (pantalla prov) */
 void display_prov_status_banner(const char *text, uint16_t color565);
 
+/** Retroiluminacion TFT (GPIO PIN_TFT_BL). */
+void display_set_backlight(bool on);
+bool display_backlight_on(void);
+
 #ifdef __cplusplus
 }
 #endif

@@ -3,6 +3,7 @@
 void lamp_state_init(lamp_state_t *state)
 {
     state->power = true;
+    state->musicMode = false;
     state->brightness = 128;
     state->hue = 0;
     state->saturation = 255;

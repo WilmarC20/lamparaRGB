@@ -27,12 +27,20 @@
 #include "ui_prov_raw.h"
 #endif
 #include "ir_control.h"
+#include "lamp_storage.h"
 #include <lvgl.h>
 #include <Arduino.h>
 #include <string.h>
 #include <time.h>
 
 static lamp_state_t appState;
+static lamp_ui_persist_t s_uiPersist = {
+    UI_TAB_COLOR, 200, false, 50, false, 0
+};
+static bool s_storeLoaded = false;
+static bool s_savePending = false;
+static uint32_t s_saveAtMs = 0;
+static uint8_t s_micSensPct = 50;
 static bool syncingUi = false;
 static bool onConfigScreen = false;
 static bool onProvScreen = false;
@@ -110,6 +118,7 @@ static void ui_app_ensure_settings_audio(void);
 static void ui_app_led_calib_sync_slider(void);
 static void ui_app_led_calib_refresh_ui(void);
 static void apply_and_report(void);
+static void ui_app_request_save(void);
 static void update_status_label(void);
 static void ui_app_start_ntp(void);
 static void ui_app_sync_radio_ui(void);
@@ -526,6 +535,7 @@ static void set_led_calib_active(bool active)
     if (active) {
         savedBrightness = appState.brightness;
         appState.musicFx = MUSIC_FX_NONE;
+        appState.musicMode = false;
         appState.power = true;
         led_calib_set_active(true);
         ui_app_led_calib_refresh_ui();
@@ -545,8 +555,10 @@ static void on_mic_sens_changed(lv_event_t *e)
         return;
     }
     const uint8_t pct = (uint8_t)lv_slider_get_value((lv_obj_t *)lv_event_get_target(e));
+    s_micSensPct = pct;
     audio_input_set_silence_level(audio_input_silence_from_sensitivity_pct(pct));
     ui_config_set_mic_sensitivity_pct(pct);
+    ui_app_request_save();
 }
 
 static void on_timer_row_clicked(lv_event_t *e)
@@ -556,6 +568,7 @@ static void on_timer_row_clicked(lv_event_t *e)
     }
     ui_settings_timer_cycle();
     ui_config_refresh_timer_label();
+    ui_app_request_save();
 }
 
 static void on_night_mode_changed(lv_event_t *e)
@@ -568,6 +581,8 @@ static void on_night_mode_changed(lv_event_t *e)
     if (ui_settings_service(&appState)) {
         apply_and_report();
         ui_app_sync_from_state();
+    } else {
+        ui_app_request_save();
     }
 }
 
@@ -656,8 +671,56 @@ bool ui_app_allow_ble_provision(void)
 
 #endif
 
+static void ui_app_request_save(void)
+{
+    s_savePending = true;
+    s_saveAtMs = millis() + 800U;
+}
+
+static void ui_app_collect_ui_persist(lamp_ui_persist_t *ui)
+{
+    if (!ui) {
+        return;
+    }
+    ui->activeTab = ui_get_active_tab();
+    ui->effectSpeed = led_controller_get_speed();
+    ui->effectReverse = led_controller_get_reverse();
+    ui->micSensPct = s_micSensPct;
+    ui->nightMode = ui_settings_get_night_mode();
+    ui->timerPresetIdx = ui_settings_get_timer_preset_idx();
+}
+
+static void ui_app_flush_save(void)
+{
+    lamp_ui_persist_t ui;
+    ui_app_collect_ui_persist(&ui);
+    s_uiPersist = ui;
+    lamp_storage_save(&appState, &ui);
+    s_savePending = false;
+}
+
+static void ui_app_stop_audio_if_off(void)
+{
+    if (!appState.power && audio_input_is_running()) {
+        audio_input_stop();
+        audioStarted = false;
+    }
+}
+
+static void ui_app_wake_from_touch(void)
+{
+    if (appState.power) {
+        return;
+    }
+    appState.power = true;
+    lamp_state_mark_dirty(&appState);
+    ui_app_notify_state_changed();
+}
+
 static void apply_and_report(void)
 {
+    display_set_backlight(appState.power);
+    ui_app_stop_audio_if_off();
     led_controller_apply(&appState);
     update_status_label();
 #if ENABLE_RAINMAKER
@@ -665,6 +728,7 @@ static void apply_and_report(void)
         rainmaker_app_report_state(&appState);
     }
 #endif
+    ui_app_request_save();
 }
 
 void ui_app_ensure_music_audio(void)
@@ -682,6 +746,25 @@ void ui_app_ensure_music_audio(void)
     }
     audioStarted = true;
     audio_input_start();
+}
+
+void ui_app_set_music_mode(bool on)
+{
+    if (appState.musicMode == on) {
+        return;
+    }
+    appState.musicMode = on;
+    if (on) {
+        if (appState.musicFx == MUSIC_FX_NONE) {
+            appState.musicFx = MUSIC_FX_SOLID;
+        }
+        music_effects_reset();
+    } else if (appState.musicFx == MUSIC_FX_SOLID) {
+        appState.musicFx = MUSIC_FX_NONE;
+    } else if (appState.musicFx != MUSIC_FX_NONE && appState.musicFx != MUSIC_FX_WAVE) {
+        appState.effect = music_fx_static_lamp_effect(appState.musicFx);
+    }
+    lamp_state_mark_dirty(&appState);
 }
 
 void ui_app_notify_state_changed(void)
@@ -725,7 +808,7 @@ void ui_app_sync_from_state(void)
         else lv_obj_clear_state(ui_SwitchPower, LV_STATE_CHECKED);
     }
     if (ui_SwitchFiesta) {
-        if (appState.musicFx == MUSIC_FX_PARTY) lv_obj_add_state(ui_SwitchFiesta, LV_STATE_CHECKED);
+        if (appState.musicMode) lv_obj_add_state(ui_SwitchFiesta, LV_STATE_CHECKED);
         else lv_obj_clear_state(ui_SwitchFiesta, LV_STATE_CHECKED);
     }
     ui_highlight_effect(ui_effect_dropdown_index(&appState));
@@ -779,6 +862,13 @@ static void on_effect_btn_clicked(lv_event_t *e)
 {
     if (syncingUi || lv_event_get_code(e) != LV_EVENT_CLICKED) return;
     const uint16_t idx = (uint16_t)(intptr_t)lv_event_get_user_data(e);
+    if (idx == ui_effect_dropdown_index(&appState) && idx >= LAMP_EFFECT_COUNT && !appState.musicMode) {
+        ui_app_set_music_mode(true);
+        ui_highlight_effect(idx);
+        lamp_state_mark_dirty(&appState);
+        ui_app_notify_state_changed();
+        return;
+    }
     ui_effect_apply_dropdown_index(&appState, idx);
     ui_highlight_effect(idx);
     ui_app_sync_effect_color_bar();
@@ -857,6 +947,22 @@ static void on_preset_clicked(lv_event_t *e)
         { 210, 110 }, { 0, 0 }, { 28, 170 }, { 0, 255 }, { 85, 255 }, { 170, 255 }, { 280, 255 }
     };
     if (idx < 0 || idx >= 7) return;
+
+    const bool sameColor = (appState.hue == presets[idx].h && appState.saturation == presets[idx].s);
+    const bool staticSolid = (!appState.musicMode && appState.musicFx == MUSIC_FX_NONE &&
+                              appState.effect == LAMP_EFFECT_SOLID);
+    if (sameColor && staticSolid) {
+        appState.musicFx = MUSIC_FX_SOLID;
+        ui_app_set_music_mode(true);
+        ui_highlight_effect(ui_effect_dropdown_index(&appState));
+        lamp_state_mark_dirty(&appState);
+        ui_app_notify_state_changed();
+        return;
+    }
+
+    appState.musicMode = false;
+    appState.musicFx = MUSIC_FX_NONE;
+    appState.effect = LAMP_EFFECT_SOLID;
     appState.hue = presets[idx].h;
     appState.saturation = presets[idx].s;
     syncingUi = true;
@@ -947,7 +1053,6 @@ static void on_radio_volume_changed(lv_event_t *e)
 static void bind_radio_tab(void)
 {
 #if ENABLE_RADIO
-    radio_player_set_volume(75);
     ui_radio_bind_station_cb(on_radio_station_clicked);
     ui_radio_bind_stop_cb(on_radio_stop_clicked);
     ui_radio_bind_play_cb(on_radio_play_clicked);
@@ -962,6 +1067,7 @@ static void on_tab_nav_clicked(lv_event_t *e)
     const uint8_t tab = (uint8_t)(intptr_t)lv_event_get_user_data(e);
     onConfigScreen = (tab == UI_TAB_SETTINGS);
     ui_set_active_tab(tab);
+    ui_app_request_save();
     if (tab == UI_TAB_EFFECTS) {
         ui_highlight_effect(ui_effect_dropdown_index(&appState));
         ui_app_sync_effect_color_bar();
@@ -982,14 +1088,8 @@ static void on_tab_nav_clicked(lv_event_t *e)
 static void on_party_changed(lv_event_t *e)
 {
     if (syncingUi || lv_event_get_code(e) != LV_EVENT_VALUE_CHANGED) return;
-    const bool fiesta = lv_obj_has_state(ui_SwitchFiesta, LV_STATE_CHECKED);
-    if (fiesta) {
-        appState.musicFx = MUSIC_FX_PARTY;
-        music_effects_reset();
-    } else if (appState.musicFx == MUSIC_FX_PARTY) {
-        appState.musicFx = MUSIC_FX_NONE;
-    }
-    lamp_state_mark_dirty(&appState);
+    const bool on = lv_obj_has_state(ui_SwitchFiesta, LV_STATE_CHECKED);
+    ui_app_set_music_mode(on);
     ui_app_notify_state_changed();
 }
 
@@ -999,7 +1099,7 @@ static void on_power_changed(lv_event_t *e)
     lv_obj_t *sw = (lv_obj_t *)lv_event_get_target(e);
     appState.power = lv_obj_has_state(sw, LV_STATE_CHECKED);
     lamp_state_mark_dirty(&appState);
-    apply_and_report();
+    ui_app_notify_state_changed();
 }
 
 static void bind_control_events(void)
@@ -1014,6 +1114,12 @@ static void bind_control_events(void)
 void ui_app_setup(void)
 {
     lamp_state_init(&appState);
+    s_storeLoaded = lamp_storage_load(&appState, &s_uiPersist);
+    if (s_storeLoaded) {
+        s_micSensPct = s_uiPersist.micSensPct;
+        led_controller_set_speed(s_uiPersist.effectSpeed);
+        led_controller_set_reverse(s_uiPersist.effectReverse);
+    }
 
 #if ENABLE_RAINMAKER
     provUiBoot = rainmaker_app_consume_prov_ui_boot();
@@ -1054,14 +1160,29 @@ void ui_app_setup(void)
     LAMP_LOG("UI init heap=%u\n", ESP.getFreeHeap());
     Serial.flush();
     bind_control_events();
+    ui_settings_init();
+    if (s_storeLoaded) {
+        ui_settings_restore(s_uiPersist.nightMode, s_uiPersist.timerPresetIdx);
+        onConfigScreen = (s_uiPersist.activeTab == UI_TAB_SETTINGS);
+        ui_set_active_tab(s_uiPersist.activeTab);
+    }
     ui_app_sync_from_state();
+    if (s_storeLoaded) {
+        ui_config_set_mic_sensitivity_pct(s_micSensPct);
+        ui_config_sync_night_switch(s_uiPersist.nightMode);
+        ui_config_refresh_timer_label();
+    }
+    display_set_backlight(appState.power);
 
     audio_input_init();
+    if (s_storeLoaded) {
+        audio_input_set_silence_level(
+            audio_input_silence_from_sensitivity_pct(s_micSensPct));
+    }
     audio_output_init();
 #if ENABLE_RADIO
     radio_player_init();
 #endif
-    ui_settings_init();
 
     for (int i = 0; i < 8; i++) {
         lv_timer_handler();
@@ -1179,6 +1300,18 @@ void ui_app_loop(void)
 
     lv_timer_handler();
 
+    if (!appState.power) {
+        uint16_t tx = 0;
+        uint16_t ty = 0;
+        if (touch_cst820_read_screen(&tx, &ty)) {
+            ui_app_wake_from_touch();
+        }
+    }
+
+    if (s_savePending && (int32_t)(millis() - s_saveAtMs) >= 0) {
+        ui_app_flush_save();
+    }
+
     ui_app_update_header_clock();
     {
         static uint32_t s_lastWifiUiMs = 0;
@@ -1207,9 +1340,9 @@ void ui_app_loop(void)
             led_controller_apply(&appState);
         }
 
-        if (lamp_state_music_active(&appState) && appState.power) {
+        if (appState.power && lamp_state_music_active(&appState)) {
             music_effects_update(&appState);
-        } else {
+        } else if (appState.power) {
             led_controller_service();
         }
     }

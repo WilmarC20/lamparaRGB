@@ -22,17 +22,29 @@ static void ir_commit(void)
 static void ir_clear_audio_modes(lamp_state_t *st)
 {
     st->musicFx = MUSIC_FX_NONE;
+    st->musicMode = false;
 }
 
 static void ir_set_music_fx(music_fx_t fx)
 {
     lamp_state_t *st = ui_app_get_state();
     if (!st) return;
-    st->musicFx = (st->musicFx == fx) ? MUSIC_FX_NONE : fx;
     st->power = true;
-    if (st->musicFx != MUSIC_FX_NONE) {
-        music_effects_reset();
+    if (st->musicFx == fx && !st->musicMode) {
+        ui_app_set_music_mode(true);
+        ir_commit();
+        return;
     }
+    if (st->musicFx == fx && st->musicMode) {
+        /* Mismo efecto activo en mode música: pasar a estático (sin música) */
+        st->musicMode = false;
+        music_effects_reset();
+        ir_commit();
+        return;
+    }
+    st->musicFx = fx;
+    st->musicMode = true;
+    music_effects_reset();
     ir_commit();
 }
 
@@ -45,6 +57,7 @@ static void ir_cycle_music_fx(void)
         next = (int)MUSIC_FX_BAR;
     }
     st->musicFx = (music_fx_t)next;
+    st->musicMode = true;
     st->power = true;
     music_effects_reset();
     ir_commit();
@@ -54,7 +67,18 @@ static void ir_set_color(uint16_t hue, uint8_t sat)
 {
     lamp_state_t *st = ui_app_get_state();
     if (!st) return;
-    ir_clear_audio_modes(st);
+    const bool sameColor = (st->hue == hue && st->saturation == sat);
+    const bool staticSolid = (!st->musicMode && st->musicFx == MUSIC_FX_NONE &&
+                              st->effect == LAMP_EFFECT_SOLID);
+    if (sameColor && staticSolid) {
+        st->power = true;
+        st->musicFx = MUSIC_FX_SOLID;
+        ui_app_set_music_mode(true);
+        ir_commit();
+        return;
+    }
+    st->musicMode = false;
+    st->musicFx = MUSIC_FX_NONE;
     st->power = true;
     st->effect = LAMP_EFFECT_SOLID;
     lamp_state_set_color_hsv(st, hue, sat);
@@ -92,7 +116,7 @@ static const AccionesIR kAccionIR[] = {
      }, nullptr, nullptr},
     {"OFF", [] {
          lamp_state_t *st = ui_app_get_state();
-         if (st) { ir_clear_audio_modes(st); st->power = false; ir_commit(); }
+         if (st) { st->power = false; ir_commit(); }
      }, nullptr, nullptr},
 
     {"R", [] { ir_set_color(0, 255); }, nullptr, nullptr},
@@ -110,7 +134,7 @@ static const AccionesIR kAccionIR[] = {
          if (st) { ir_clear_audio_modes(st); st->power = true; st->effect = LAMP_EFFECT_RAINBOW; ir_commit(); }
      }, nullptr, nullptr},
     {"Persecucion", [] { ir_set_music_fx(MUSIC_FX_CHASE); }, nullptr, nullptr},
-    {"Onda", [] { ir_set_music_fx(MUSIC_FX_WAVE); }, nullptr, nullptr},
+    {"Colombia", [] { ir_set_music_fx(MUSIC_FX_WAVE); }, nullptr, nullptr},
     {"Respiracion", [] { ir_set_music_fx(MUSIC_FX_BREATH); }, nullptr, nullptr},
 
     {"Fiesta", [] { ir_set_music_fx(MUSIC_FX_PARTY); }, nullptr, nullptr},

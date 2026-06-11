@@ -37,6 +37,19 @@ uint8_t audio_input_sensitivity_pct_from_silence(int silence);
 void audio_input_set_test_mode(bool enable);
 bool audio_input_is_test_mode(void);
 
+/** Fuente externa: PCM de la radio alimenta los niveles en vez del mic. */
+void audio_input_set_external_source(bool enable);
+bool audio_input_external_active(void);
+/** Llamar por muestra (pre-volumen); decima internamente. */
+void audio_input_feed_external(int16_t left, int16_t right);
+
+/* Analisis con AGC (0-400, mic o radio): nivel, graves, brillos y beats. */
+int audio_input_get_norm_level(void);
+int audio_input_get_norm_bass(void);
+int audio_input_get_norm_high(void);
+/** Contador monotono de beats; el efecto detecta cambios. */
+uint32_t audio_input_get_beat_count(void);
+
 #ifdef __cplusplus
 }
 #endif

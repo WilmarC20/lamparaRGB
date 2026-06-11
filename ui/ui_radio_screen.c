@@ -89,7 +89,7 @@ lv_obj_t *ui_radio_tab_build(lv_obj_t *parent)
     lv_obj_clear_flag(leftCol, LV_OBJ_FLAG_SCROLLABLE);
 
     lv_obj_t *playerPanel = lv_obj_create(leftCol);
-    lv_obj_set_size(playerPanel, 184, 118);
+    lv_obj_set_size(playerPanel, 184, 110);
     lv_obj_set_pos(playerPanel, 0, 0);
     ui_style_card(playerPanel);
     lv_obj_clear_flag(playerPanel, LV_OBJ_FLAG_SCROLLABLE);
@@ -128,9 +128,10 @@ lv_obj_t *ui_radio_tab_build(lv_obj_t *parent)
         lv_obj_add_event_cb(s_stopBtn, s_cbStop, LV_EVENT_CLICKED, NULL);
     }
 
+    /* 114 + 56 = 170 <= 172 (alto de la columna): sin solape con la nav bar */
     lv_obj_t *volPanel = lv_obj_create(leftCol);
     lv_obj_set_size(volPanel, 184, 56);
-    lv_obj_set_pos(volPanel, 0, 124);
+    lv_obj_set_pos(volPanel, 0, 114);
     ui_style_card(volPanel);
     lv_obj_clear_flag(volPanel, LV_OBJ_FLAG_SCROLLABLE);
 
@@ -145,13 +146,17 @@ lv_obj_t *ui_radio_tab_build(lv_obj_t *parent)
     lv_obj_align_to(volTitle, volIco, LV_ALIGN_OUT_RIGHT_MID, 4, 0);
 
     s_volPctLbl = lv_label_create(volPanel);
-    lv_label_set_text(s_volPctLbl, "75%");
+    {
+        char volBuf[8];
+        snprintf(volBuf, sizeof(volBuf), "%u%%", (unsigned)RADIO_DEFAULT_VOLUME_PCT);
+        lv_label_set_text(s_volPctLbl, volBuf);
+    }
     lv_obj_set_style_text_color(s_volPctLbl, lv_color_hex(UI_COLOR_ACCENT), LV_PART_MAIN);
     lv_obj_align(s_volPctLbl, LV_ALIGN_TOP_RIGHT, 0, 0);
 
     s_volSlider = lv_slider_create(volPanel);
     lv_slider_set_range(s_volSlider, 0, 100);
-    lv_slider_set_value(s_volSlider, 75, LV_ANIM_OFF);
+    lv_slider_set_value(s_volSlider, RADIO_DEFAULT_VOLUME_PCT, LV_ANIM_OFF);
     lv_obj_set_width(s_volSlider, 168);
     lv_obj_align(s_volSlider, LV_ALIGN_BOTTOM_MID, 0, 0);
     ui_style_slider(s_volSlider);

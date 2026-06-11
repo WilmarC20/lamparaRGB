@@ -8,6 +8,7 @@ void ui_app_loop(void);
 lamp_state_t *ui_app_get_state(void);
 void ui_app_sync_from_state(void);
 /** Aplica LEDs + UI tras cambio externo (p. ej. mando IR). */
+void ui_app_set_music_mode(bool on);
 void ui_app_notify_state_changed(void);
 /** Arranca el mic si hay un modo musical activo. */
 void ui_app_ensure_music_audio(void);

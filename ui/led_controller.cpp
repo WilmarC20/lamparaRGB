@@ -1,8 +1,10 @@
+#include "music_effects.h"
 #include "led_controller.h"
 #include "led_calib.h"
 #include "config.h"
 #include "pins.h"
 #include <Arduino.h>
+#include <string.h>
 
 #if ENABLE_LED_STRIP
 
@@ -11,6 +13,7 @@
 static WS2812FX ws2812fx(LED_COUNT, PIN_LED_DATA, NEO_GRB + NEO_KHZ800);
 static bool partyActive = false;
 static bool outputPaused = false;
+static bool s_staticColombia = false;
 static bool calibActive = false;
 static uint16_t calibIndex = 0;
 static uint32_t solidColor = 0xFF0000;
@@ -79,6 +82,19 @@ bool led_controller_output_paused(void)
     return outputPaused;
 }
 
+static void led_all_off(void)
+{
+    partyActive = false;
+    s_staticColombia = false;
+    ws2812fx.setMode(FX_MODE_STATIC);
+    ws2812fx.setColor(0);
+    ws2812fx.setBrightness(0);
+    for (uint16_t i = 0; i < LED_COUNT; i++) {
+        ws2812fx.setPixelColor(i, 0);
+    }
+    ws2812fx.show();
+}
+
 void led_controller_apply(lamp_state_t *state)
 {
     if (calibActive) {
@@ -89,26 +105,52 @@ void led_controller_apply(lamp_state_t *state)
         state->dirty = false;
         return;
     }
+    if (!state->power) {
+        led_all_off();
+        state->dirty = false;
+        return;
+    }
     if (lamp_state_music_active(state)) {
+        s_staticColombia = false;
         partyActive = true;
-        ws2812fx.setBrightness(state->power ? state->brightness : 0);
+        ws2812fx.setBrightness(state->brightness);
         state->dirty = false;
         return;
     }
 
     partyActive = false;
-    ws2812fx.setBrightness(state->power ? state->brightness : 0);
+    ws2812fx.setBrightness(state->brightness);
 
-    if (!state->power) {
-        ws2812fx.setMode(FX_MODE_STATIC);
-        ws2812fx.setColor(0);
+    if (!state->musicMode && state->musicFx == MUSIC_FX_WAVE) {
+        if (!s_staticColombia) {
+            ws2812fx.stop();
+            ws2812fx.setMode(FX_MODE_STATIC);
+            s_staticColombia = true;
+        }
+        uint8_t rgb[LED_COUNT * 3];
+        memset(rgb, 0, sizeof(rgb));
+        music_effects_colombia_static(state, rgb);
+        for (uint16_t i = 0; i < LED_COUNT; i++) {
+            ws2812fx.setPixelColor(i,
+                                   ws2812fx.Color(rgb[i * 3], rgb[i * 3 + 1], rgb[i * 3 + 2]));
+        }
         ws2812fx.show();
         state->dirty = false;
         return;
     }
 
+    s_staticColombia = false;
+    ws2812fx.start();
+    lamp_effect_t eff = state->effect;
+    if (!state->musicMode && state->musicFx != MUSIC_FX_NONE && state->musicFx != MUSIC_FX_WAVE) {
+        eff = music_fx_static_lamp_effect(state->musicFx);
+    }
+    if (eff >= LAMP_EFFECT_COUNT) {
+        eff = LAMP_EFFECT_SOLID;
+    }
+
     solidColor = hsv_to_rgb32(state->hue, state->saturation, 255);
-    ws2812fx.setMode(kEffectModes[state->effect]);
+    ws2812fx.setMode(kEffectModes[eff]);
     ws2812fx.setColor(solidColor);
     ws2812fx.setSpeed(effectSpeed);
     ws2812fx.setOptions(0, effectReverse ? REVERSE : NO_OPTIONS);
@@ -139,7 +181,7 @@ bool led_controller_get_reverse(void)
 
 void led_controller_service(void)
 {
-    if (outputPaused || calibActive) return;
+    if (outputPaused || calibActive || s_staticColombia) return;
     if (!partyActive) {
         ws2812fx.service();
     }
@@ -147,7 +189,7 @@ void led_controller_service(void)
 
 void led_controller_set_party_pixels(const uint8_t *rgb, uint16_t count)
 {
-    if (outputPaused || calibActive) return;
+    if (outputPaused || calibActive || !partyActive) return;
     if (count > LED_COUNT) count = LED_COUNT;
     for (uint16_t i = 0; i < count; i++) {
         ws2812fx.setPixelColor(i, ws2812fx.Color(rgb[i * 3], rgb[i * 3 + 1], rgb[i * 3 + 2]));

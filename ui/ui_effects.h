@@ -19,6 +19,7 @@ typedef enum {
 const char *ui_effect_dropdown_options(void);
 const char *ui_effect_name_at(uint16_t idx);
 const char *ui_effect_icon_at(uint16_t idx);
+bool ui_effect_uses_flag_icon(uint16_t idx);
 uint32_t ui_effect_icon_color(uint16_t idx);
 ui_fx_color_mode_t ui_effect_color_mode(uint16_t idx);
 void ui_effect_color_stops(uint16_t idx, uint16_t base_hue, uint8_t sat,

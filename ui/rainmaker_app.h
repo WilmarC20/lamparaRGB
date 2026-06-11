@@ -36,6 +36,12 @@ void rainmaker_app_print_qr_serial_async(void);
 void rainmaker_app_loop(void);
 void rainmaker_app_report_state(const lamp_state_t *state);
 
+/** Pausa el agente RainMaker (MQTT/TLS) y libera su RAM. Para radio. */
+void rainmaker_app_pause_cloud(void);
+/** Reanuda el agente RainMaker tras una pausa. */
+void rainmaker_app_resume_cloud(void);
+bool rainmaker_app_cloud_paused(void);
+
 bool rainmaker_app_is_online(void);
 bool rainmaker_app_provisioning_active(void);
 bool rainmaker_app_init_done(void);

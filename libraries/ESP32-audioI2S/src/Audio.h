@@ -67,6 +67,7 @@ using namespace fs;
 
 
 extern __attribute__((weak)) void audio_info(const char*);
+extern __attribute__((weak)) void audio_tap_sample(int16_t left, int16_t right); // LamparaV3: per-sample pre-volume tap
 extern __attribute__((weak)) void audio_id3data(const char*); //ID3 metadata
 extern __attribute__((weak)) void audio_id3image(File& file, const size_t pos, const size_t size); //ID3 metadata image
 extern __attribute__((weak)) void audio_eof_mp3(const char*); //end of mp3 file

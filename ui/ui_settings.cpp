@@ -60,6 +60,22 @@ bool ui_settings_get_night_mode(void)
     return s_nightMode;
 }
 
+uint8_t ui_settings_get_timer_preset_idx(void)
+{
+    return s_timerPresetIdx;
+}
+
+void ui_settings_restore(bool nightMode, uint8_t timerPresetIdx)
+{
+    s_nightMode = nightMode;
+    if (timerPresetIdx >= kTimerPresetCount) {
+        timerPresetIdx = 0;
+    }
+    s_timerPresetIdx = timerPresetIdx;
+    s_timerDeadlineMs = 0;
+    s_nightForcedOff = false;
+}
+
 bool ui_settings_timer_active(void)
 {
     return s_timerDeadlineMs != 0;

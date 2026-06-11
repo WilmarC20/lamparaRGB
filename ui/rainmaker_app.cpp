@@ -15,6 +15,7 @@
 #include "WiFi.h"
 #include "WiFiProv.h"
 #include <network_provisioning/manager.h>
+#include <esp_rmaker_mqtt.h>
 
 #define RM_PREFS_NS          "lamp_v3"
 #define RM_PREFS_KEY_PROV_UI "prov_ui"
@@ -30,6 +31,8 @@ static volatile bool rmApplyPending = false;
 static bool s_initDone = false;
 static bool s_provOnly = false;
 static bool s_wifiProvisioned = false;
+static bool s_cloudPaused = false;
+static uint32_t s_resumeReportMs = 0;
 
 static Param s_powerParam("Power", ESP_RMAKER_PARAM_POWER, value(true),
                           PROP_FLAG_READ | PROP_FLAG_WRITE);
@@ -46,7 +49,7 @@ static Param s_partyParam("PartyMode", ESP_RMAKER_PARAM_TOGGLE, value(false),
 
 static const char *kEffectOptions[] = {
     "Solido", "Arcoiris", "Persecucion", "Onda", "Respiracion", "Estrobo",
-    "Musica Barra", "Musica Fiesta", "Musica Persecucion", "Musica Onda",
+    "Musica Barra", "Musica Fiesta", "Musica Persecucion", "Musica Colombia",
     "Musica Respiracion", "Musica Estrobo",
 };
 
@@ -59,7 +62,7 @@ static const char *rm_music_fx_option_name(music_fx_t fx)
         case MUSIC_FX_BAR:    return "Musica Barra";
         case MUSIC_FX_PARTY:  return "Musica Fiesta";
         case MUSIC_FX_CHASE:  return "Musica Persecucion";
-        case MUSIC_FX_WAVE:   return "Musica Onda";
+        case MUSIC_FX_WAVE:   return "Musica Colombia";
         case MUSIC_FX_BREATH: return "Musica Respiracion";
         case MUSIC_FX_STROBE: return "Musica Estrobo";
         default:              return NULL;
@@ -106,12 +109,14 @@ static bool rm_apply_effect_name(lamp_state_t *state, const char *name)
     const music_fx_t musicFx = rm_music_fx_from_option(name);
     if (musicFx != MUSIC_FX_NONE) {
         state->musicFx = musicFx;
+        state->musicMode = true;
         music_effects_reset();
         return true;
     }
 
     for (int i = 0; i < LAMP_EFFECT_COUNT; i++) {
         if (strcmp(name, led_effect_name((lamp_effect_t)i)) == 0) {
+            state->musicMode = false;
             state->musicFx = MUSIC_FX_NONE;
             state->effect = (lamp_effect_t)i;
             return true;
@@ -180,15 +185,10 @@ static void write_callback(Device *device, Param *param, const param_val_t val,
         }
         rmApplyPending = true;
         param->updateAndReport(val);
-        s_partyParam.updateAndReport(value(gState->musicFx == MUSIC_FX_PARTY));
+        s_partyParam.updateAndReport(value(gState->musicMode));
         return;
     } else if (strcmp(param_name, "PartyMode") == 0) {
-        if (val.val.b) {
-            gState->musicFx = MUSIC_FX_PARTY;
-            music_effects_reset();
-        } else if (gState->musicFx == MUSIC_FX_PARTY) {
-            gState->musicFx = MUSIC_FX_NONE;
-        }
+        ui_app_set_music_mode(val.val.b);
         rmApplyPending = true;
         param->updateAndReport(val);
         const char *eff = rm_effect_name_for_state(gState);
@@ -372,6 +372,10 @@ void rainmaker_app_setup(lamp_state_t *state)
         LAMP_LOG_LN("RM: sin WiFi guardado (prov desde Ajustes)");
     }
 
+    /* No liberar BT manualmente: el handler FREE_BTDM del provisioning ya
+     * devuelve esa RAM, y hacerlo dos veces corrompe el heap (canario
+     * 0xbaad5678 en crash LoadProhibited). Verificado: solo retenia 2.5 KB. */
+
     s_initDone = true;
 }
 
@@ -384,15 +388,55 @@ void rainmaker_app_loop(void)
     if (rmApplyPending && gState) {
         rmApplyPending = false;
         lamp_state_mark_dirty(gState);
-        led_controller_apply(gState);
-        ui_app_ensure_music_audio();
-        ui_app_sync_from_state();
+        ui_app_notify_state_changed();
     }
+
+    /* Tras reanudar la nube, re-sincronizar params cuando MQTT ya reconecto */
+    if (s_resumeReportMs != 0 && (int32_t)(millis() - s_resumeReportMs) >= 0) {
+        s_resumeReportMs = 0;
+        if (gState) {
+            rainmaker_app_report_state(gState);
+        }
+    }
+}
+
+void rainmaker_app_pause_cloud(void)
+{
+    if (!s_initDone || s_provOnly || s_cloudPaused) {
+        return;
+    }
+    s_cloudPaused = true;
+    s_resumeReportMs = 0;
+    /* esp_rmaker_stop solo detiene el agente: la conexion MQTT/TLS (~40 KB)
+     * queda viva. Desconectar explicito para que el transporte libere RAM. */
+    const esp_err_t stopErr = RMaker.stop();
+    const esp_err_t mqttErr = esp_rmaker_mqtt_disconnect();
+    LAMP_LOG("RM: nube pausada stop=%d mqtt=%d heap=%u\n",
+             (int)stopErr, (int)mqttErr, ESP.getFreeHeap());
+}
+
+void rainmaker_app_resume_cloud(void)
+{
+    if (!s_cloudPaused) {
+        return;
+    }
+    s_cloudPaused = false;
+    const esp_err_t startErr = RMaker.start();
+    const esp_err_t mqttErr = esp_rmaker_mqtt_connect();
+    /* MQTT reconecta async; reportar estado unos segundos despues */
+    s_resumeReportMs = millis() + 6000U;
+    LAMP_LOG("RM: nube reanudada start=%d mqtt=%d heap=%u\n",
+             (int)startErr, (int)mqttErr, ESP.getFreeHeap());
+}
+
+bool rainmaker_app_cloud_paused(void)
+{
+    return s_cloudPaused;
 }
 
 void rainmaker_app_report_state(const lamp_state_t *state)
 {
-    if (!state || WiFi.status() != WL_CONNECTED) {
+    if (!state || s_cloudPaused || WiFi.status() != WL_CONNECTED) {
         return;
     }
 
@@ -409,7 +453,7 @@ void rainmaker_app_report_state(const lamp_state_t *state)
         eff = "Solido";
     }
     s_effectParam.updateAndReport(esp_rmaker_str(eff));
-    s_partyParam.updateAndReport(value(state->musicFx == MUSIC_FX_PARTY));
+    s_partyParam.updateAndReport(value(state->musicMode));
 }
 
 bool rainmaker_app_is_online(void)
@@ -602,6 +646,9 @@ void rainmaker_app_print_qr_serial(void) {}
 void rainmaker_app_print_qr_serial_async(void) {}
 void rainmaker_app_loop(void) {}
 void rainmaker_app_report_state(const lamp_state_t *state) { (void)state; }
+void rainmaker_app_pause_cloud(void) {}
+void rainmaker_app_resume_cloud(void) {}
+bool rainmaker_app_cloud_paused(void) { return false; }
 bool rainmaker_app_is_online(void) { return false; }
 bool rainmaker_app_provisioning_active(void) { return false; }
 bool rainmaker_app_get_qr_payload(char *buf, size_t buf_len)
