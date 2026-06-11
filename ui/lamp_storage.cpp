@@ -41,6 +41,37 @@ static void clamp_ui(lamp_ui_persist_t *ui)
     }
 }
 
+/* Copia de lo ultimo persistido: evita reescribir NVS (desgaste de flash)
+ * cuando un toque de tab o boton IR dispara un guardado sin cambios reales */
+static bool s_lastValid = false;
+static lamp_state_t s_lastState;
+static lamp_ui_persist_t s_lastUi;
+
+static bool storage_same(const lamp_state_t *state, const lamp_ui_persist_t *ui)
+{
+    return s_lastValid &&
+           s_lastState.power == state->power &&
+           s_lastState.brightness == state->brightness &&
+           s_lastState.hue == state->hue &&
+           s_lastState.saturation == state->saturation &&
+           s_lastState.effect == state->effect &&
+           s_lastState.musicFx == state->musicFx &&
+           s_lastState.musicMode == state->musicMode &&
+           s_lastUi.activeTab == ui->activeTab &&
+           s_lastUi.effectSpeed == ui->effectSpeed &&
+           s_lastUi.effectReverse == ui->effectReverse &&
+           s_lastUi.micSensPct == ui->micSensPct &&
+           s_lastUi.nightMode == ui->nightMode &&
+           s_lastUi.timerPresetIdx == ui->timerPresetIdx;
+}
+
+static void storage_remember(const lamp_state_t *state, const lamp_ui_persist_t *ui)
+{
+    s_lastState = *state;
+    s_lastUi = *ui;
+    s_lastValid = true;
+}
+
 bool lamp_storage_load(lamp_state_t *state, lamp_ui_persist_t *ui)
 {
     if (!state || !ui) {
@@ -82,12 +113,16 @@ bool lamp_storage_load(lamp_state_t *state, lamp_ui_persist_t *ui)
     prefs.end();
     clamp_state(state);
     clamp_ui(ui);
+    storage_remember(state, ui);
     return true;
 }
 
 void lamp_storage_save(const lamp_state_t *state, const lamp_ui_persist_t *ui)
 {
     if (!state || !ui) {
+        return;
+    }
+    if (storage_same(state, ui)) {
         return;
     }
 
@@ -112,4 +147,5 @@ void lamp_storage_save(const lamp_state_t *state, const lamp_ui_persist_t *ui)
     prefs.putBool("night", ui->nightMode);
     prefs.putUChar("timerIdx", ui->timerPresetIdx);
     prefs.end();
+    storage_remember(state, ui);
 }

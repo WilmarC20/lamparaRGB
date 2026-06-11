@@ -30,7 +30,10 @@
 static int16_t sBuffer[AUDIO_BLOCK_LEN];
 static audio_levels_t latestLevels;
 static portMUX_TYPE levelsMux = portMUX_INITIALIZER_UNLOCKED;
-static TaskHandle_t adcTaskHandle = NULL;
+static volatile TaskHandle_t adcTaskHandle = NULL;
+/* Parada cooperativa: vTaskDelete externo puede matar la tarea dentro de
+ * portENTER_CRITICAL y dejar el spinlock tomado (deadlock + WDT reset). */
+static volatile bool s_adcStopReq = false;
 
 static volatile int s_soundLevel = 0;
 static volatile int s_soundSpan = 0;
@@ -113,7 +116,7 @@ static void adc_task(void *param)
     int dc = 2048;
     int emaAbs = 0;
 
-    while (true) {
+    while (!s_adcStopReq) {
 #if AUDIO_USE_LEGACY_ADC
         const int raw = mic_adc_read_raw();
 #else
@@ -146,6 +149,9 @@ static void adc_task(void *param)
 
         vTaskDelayUntil(&lastWake, period);
     }
+
+    adcTaskHandle = NULL;
+    vTaskDelete(NULL);
 }
 
 /* --- Analisis comun (mic ~1 kHz o radio ~1.4 kHz decimada) ---
@@ -165,23 +171,64 @@ static int s_procLevelEma = 0;
 static int s_procBassEma = 0;
 static int s_procHighEma = 0;
 static int s_procBassAvg = 0;
-static int s_peakLevel = PROC_PEAK_FLOOR;
-static int s_peakBass = PROC_PEAK_FLOOR;
-static int s_peakHigh = PROC_PEAK_FLOOR;
 static uint32_t s_lastBeatMs = 0;
 
-static int proc_normalize(int ema, int *peak)
+/* AGC por caracteristica con pico Y piso: el AGC de hardware del MAX9814
+ * comprime la señal (ema ~= pico siempre), asi que normalizar solo contra
+ * el pico da valores planos. Expandir entre valle y pico recupera la
+ * dinamica real de la musica. Piso: baja rapido, sube ~20/s. */
+typedef struct {
+    int peak;
+    int fl;
+    uint16_t flCnt;
+} proc_agc_t;
+
+static proc_agc_t s_agcLevel;
+static proc_agc_t s_agcBass;
+static proc_agc_t s_agcHigh;
+
+static int proc_normalize(proc_agc_t *a, int ema)
 {
-    if (ema > *peak) {
-        *peak = ema;
-    } else if (*peak > PROC_PEAK_FLOOR) {
-        *peak -= ((*peak - PROC_PEAK_FLOOR) >> 11) + 1;
+    if (ema > a->peak) {
+        a->peak = ema;
+    } else if (a->peak > PROC_PEAK_FLOOR) {
+        a->peak -= ((a->peak - PROC_PEAK_FLOOR) >> 11) + 1;
     }
-    int norm = (ema * PROC_NORM_TOP) / *peak;
+
+    if (ema < a->fl) {
+        a->fl += (ema - a->fl) >> 3;
+        if (a->fl < 0) {
+            a->fl = 0;
+        }
+    } else if (++a->flCnt >= 50U) {
+        a->flCnt = 0;
+        if (a->fl < ema) {
+            a->fl++;
+        }
+    }
+    if (a->fl > a->peak - 16) {
+        a->fl = a->peak - 16;
+    }
+
+    int range = a->peak - a->fl;
+    if (range < 24) {
+        range = 24;
+    }
+    int norm = ((ema - a->fl) * PROC_NORM_TOP) / range;
+    if (norm < 0) {
+        norm = 0;
+    }
     if (norm > 400) {
         norm = 400;
     }
     return norm;
+}
+
+static void proc_agc_reset(proc_agc_t *a)
+{
+    a->peak = PROC_PEAK_FLOOR;
+    a->fl = 0;
+    a->flCnt = 0;
 }
 
 static void proc_reset(void)
@@ -191,9 +238,9 @@ static void proc_reset(void)
     s_procBassEma = 0;
     s_procHighEma = 0;
     s_procBassAvg = 0;
-    s_peakLevel = PROC_PEAK_FLOOR;
-    s_peakBass = PROC_PEAK_FLOOR;
-    s_peakHigh = PROC_PEAK_FLOOR;
+    proc_agc_reset(&s_agcLevel);
+    proc_agc_reset(&s_agcBass);
+    proc_agc_reset(&s_agcHigh);
     s_procLevel = 0;
     s_procBass = 0;
     s_procHigh = 0;
@@ -215,9 +262,9 @@ static void audio_process_ac(int ac)
     const int highAbs = hp < 0 ? -hp : hp;
     s_procHighEma += (highAbs - s_procHighEma) >> 3;
 
-    s_procLevel = proc_normalize(s_procLevelEma, &s_peakLevel);
-    s_procBass = proc_normalize(s_procBassEma, &s_peakBass);
-    s_procHigh = proc_normalize(s_procHighEma, &s_peakHigh);
+    s_procLevel = proc_normalize(&s_agcLevel, s_procLevelEma);
+    s_procBass = proc_normalize(&s_agcBass, s_procBassEma);
+    s_procHigh = proc_normalize(&s_agcHigh, s_procHighEma);
 
     /* Beat: energia de graves 1.5x sobre su promedio lento (~0.5 s),
      * con refractario de 200 ms (max ~300 BPM) */
@@ -364,16 +411,21 @@ void audio_input_start(void)
     analogReadResolution(12);
 #endif
 
+    s_adcStopReq = false;
     xTaskCreatePinnedToCore(adc_task, "adc_audio", ADC_TASK_STACK, NULL, ADC_TASK_PRIO,
-                            &adcTaskHandle, 1);
+                            (TaskHandle_t *)&adcTaskHandle, 1);
 }
 
 void audio_input_stop(void)
 {
     s_testMode = false;
     if (adcTaskHandle) {
-        vTaskDelete(adcTaskHandle);
-        adcTaskHandle = NULL;
+        s_adcStopReq = true;
+        /* La tarea duerme max 1 ms por ciclo: sale sola enseguida */
+        for (int i = 0; i < 100 && adcTaskHandle != NULL; i++) {
+            vTaskDelay(pdMS_TO_TICKS(1));
+        }
+        s_adcStopReq = false;
     }
     portENTER_CRITICAL(&levelsMux);
     memset(&latestLevels, 0, sizeof(latestLevels));

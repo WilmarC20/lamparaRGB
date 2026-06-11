@@ -50,6 +50,11 @@ static volatile bool pendingCloseConfig = false;
 #if ENABLE_RAINMAKER
 static bool rainmakerStarted = false;
 static uint32_t rainmakerStartMs = 0;
+/* Reporte a nube con debounce: arrastrar un slider dispara decenas de
+ * apply_and_report/s; publicar MQTT en cada tick infla el outbox de
+ * esp-mqtt (heap) y puede tumbar el nodo. Se publica al soltar (~400 ms). */
+static bool s_rmReportPending = false;
+static uint32_t s_rmReportAtMs = 0;
 static bool provUiBoot = false;
 static bool provBleStarted = false;
 static bool provTouchExitLatched = false;
@@ -724,9 +729,8 @@ static void apply_and_report(void)
     led_controller_apply(&appState);
     update_status_label();
 #if ENABLE_RAINMAKER
-    if (rainmakerStarted && rainmaker_app_is_online()) {
-        rainmaker_app_report_state(&appState);
-    }
+    s_rmReportPending = true;
+    s_rmReportAtMs = millis() + 400U;
 #endif
     ui_app_request_save();
 }
@@ -1311,6 +1315,15 @@ void ui_app_loop(void)
     if (s_savePending && (int32_t)(millis() - s_saveAtMs) >= 0) {
         ui_app_flush_save();
     }
+
+#if ENABLE_RAINMAKER
+    if (s_rmReportPending && (int32_t)(millis() - s_rmReportAtMs) >= 0) {
+        s_rmReportPending = false;
+        if (rainmakerStarted && rainmaker_app_is_online()) {
+            rainmaker_app_report_state(&appState);
+        }
+    }
+#endif
 
     ui_app_update_header_clock();
     {

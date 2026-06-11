@@ -195,6 +195,7 @@ typedef enum {
 } flag_zone_t;
 
 static float s_flagPhase = 0.0f;
+static float s_flagLvlSm = 0.0f;
 static float s_flagBassSm = 0.0f;
 static float s_flagHighSm = 0.0f;
 static uint32_t s_flagBeatSeen = 0;
@@ -255,13 +256,17 @@ static void flag_base_rgb(flag_zone_t zone, uint8_t *r, uint8_t *g, uint8_t *b)
 
 static void fx_flag_colombia(lamp_state_t *state, uint8_t *rgb)
 {
+    /* Las tres señales salen del mismo pipeline AGC (norm_*): misma escala
+     * con mic o radio, sin depender del slider de sensibilidad */
+    const float tgtLvl = (float)audio_input_get_norm_level();
     const float tgtBass = (float)audio_input_get_norm_bass();
     const float tgtHigh = (float)audio_input_get_norm_high();
 
+    s_flagLvlSm += (tgtLvl - s_flagLvlSm) * (tgtLvl > s_flagLvlSm ? 0.45f : 0.10f);
     s_flagBassSm += (tgtBass - s_flagBassSm) * (tgtBass > s_flagBassSm ? 0.65f : 0.12f);
     s_flagHighSm += (tgtHigh - s_flagHighSm) * (tgtHigh > s_flagHighSm ? 0.60f : 0.12f);
 
-    s_flagPhase += 0.03f + (flag_dyn(flag_norm01(s_smoothLevel)) * 0.16f);
+    s_flagPhase += 0.03f + (flag_dyn(flag_norm01(s_flagLvlSm)) * 0.16f);
     if (s_flagPhase > 6.28318f) {
         s_flagPhase -= 6.28318f;
     }
@@ -280,8 +285,7 @@ static void fx_flag_colombia(lamp_state_t *state, uint8_t *rgb)
         }
     }
 
-    const uint8_t maxV = state->brightness > 0 ? state->brightness : 1;
-    const float lvlN = flag_norm01(s_smoothLevel);
+    const float lvlN = flag_norm01(s_flagLvlSm);
     const float bassN = flag_norm01(s_flagBassSm);
     const float highN = flag_norm01(s_flagHighSm);
     const float lvlD = flag_dyn(lvlN);
@@ -313,17 +317,18 @@ static void fx_flag_colombia(lamp_state_t *state, uint8_t *rgb)
             energy = 1.0f;
         }
 
-        const uint8_t br = (uint8_t)((float)maxV * energy);
+        /* Escala = energia * brillo del usuario (antes el brillo se cancelaba) */
+        const uint16_t s8 = (uint16_t)(energy * (float)state->brightness + 0.5f);
         set_pixel_rgb(rgb, i,
-                      (uint8_t)(((uint16_t)r0 * br) / maxV),
-                      (uint8_t)(((uint16_t)g0 * br) / maxV),
-                      (uint8_t)(((uint16_t)b0 * br) / maxV));
+                      (uint8_t)(((uint16_t)r0 * s8) / 255U),
+                      (uint8_t)(((uint16_t)g0 * s8) / 255U),
+                      (uint8_t)(((uint16_t)b0 * s8) / 255U));
     }
 }
 
 static void fx_solid_music(lamp_state_t *state, uint8_t *rgb)
 {
-    music_smooth_level();
+    /* music_effects_update ya corrio music_smooth_level(): no repetir */
     float lvl = s_smoothLevel / (float)MUSIC_LEVEL_MAX;
     if (lvl < 0.0f) {
         lvl = 0.0f;
@@ -391,6 +396,7 @@ void music_effects_reset(void)
     s_strobeOn = false;
     s_strobeUntilMs = 0;
     s_flagPhase = 0.0f;
+    s_flagLvlSm = 0.0f;
     s_flagBassSm = 0.0f;
     s_flagHighSm = 0.0f;
     s_flagBeatSeen = audio_input_get_beat_count();
