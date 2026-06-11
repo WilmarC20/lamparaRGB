@@ -476,9 +476,9 @@
 
 #define LV_USE_CHECKBOX   0
 
-#define LV_USE_DROPDOWN   1   /*Requires: lv_label*/
+#define LV_USE_DROPDOWN   0   /*Sin lv_dropdown_create en la UI (lista de efectos usa botones)*/
 
-#define LV_USE_IMG        1   /*Requerido por canvas y qrcode*/
+#define LV_USE_IMG        0   /*Canvas y qrcode LVGL desactivados; QR se dibuja directo al TFT*/
 
 #define LV_USE_LABEL      1
 #if LV_USE_LABEL

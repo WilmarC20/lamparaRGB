@@ -9,7 +9,9 @@ extern void IRControlLite_inicio(int valor);
 extern void IRControlLite_presionado(int valor);
 extern void IRControlLite_solto(int valor);
 
-#define RMT_RX_SYMBOLS 256
+/* Trama NEC = 1 lider + 32 bits + stop (~34 simbolos); 64 cubre NEC + repeat
+ * y coincide con mem_block_symbols. 256 desperdiciaba 768 B de RAM estatica. */
+#define RMT_RX_SYMBOLS 64
 
 static rmt_channel_handle_t rx_channel = NULL;
 static rmt_receive_config_t rx_config;

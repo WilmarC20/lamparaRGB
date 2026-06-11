@@ -33,7 +33,6 @@
 
 static uint16_t *s_qrPixels = NULL;
 static const int s_qrPixelSize = RM_PROV_QR_SIZE_PX;
-static char s_qrPayload[160];
 static char s_currentStatus[48];
 static bool s_initialized = false;
 static bool s_btnPressed = false;
@@ -116,19 +115,23 @@ bool ui_prov_raw_qr_alloc(int *out_px)
 
 bool ui_prov_raw_qr_encode_sync(void)
 {
+    /* Payload solo vive durante el encode: en stack, no en RAM estatica */
+    char qrPayload[160];
+
     if (!s_qrPixels) {
         return false;
     }
 #if ENABLE_RAINMAKER
-    if (!rainmaker_app_get_qr_payload(s_qrPayload, sizeof(s_qrPayload))) {
+    if (!rainmaker_app_get_qr_payload(qrPayload, sizeof(qrPayload))) {
         return false;
     }
 #else
-    strncpy(s_qrPayload, "{}", sizeof(s_qrPayload) - 1);
+    strncpy(qrPayload, "{}", sizeof(qrPayload) - 1);
+    qrPayload[sizeof(qrPayload) - 1] = '\0';
 #endif
     LAMP_LOG("PROV RAW: QR encode len=%u heap=%u\n",
-                  (unsigned)strlen(s_qrPayload), ESP.getFreeHeap());
-    return ui_qr_bitmap_render(s_qrPayload, s_qrPixels, s_qrPixelSize);
+                  (unsigned)strlen(qrPayload), ESP.getFreeHeap());
+    return ui_qr_bitmap_render(qrPayload, s_qrPixels, s_qrPixelSize);
 }
 
 void ui_prov_raw_qr_paint(void)

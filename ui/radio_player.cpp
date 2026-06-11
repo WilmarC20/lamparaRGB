@@ -143,8 +143,8 @@ static void radio_prepare_playback(void)
 
 void radio_player_init(void)
 {
-    (void)radio_ensure_audio();
-    radio_apply_volume();
+    /* Audio se crea perezosamente en el primer play (radio_ensure_audio):
+     * libera ~18 KB de RAM interna mientras la radio no se usa. */
     WiFi.setAutoReconnect(true);
 }
 
