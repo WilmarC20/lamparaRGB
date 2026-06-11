@@ -24,3 +24,13 @@ Thumbs.db
 # JVM crash dumps (arduino-cli)
 hs_err_pid*.log
 replay_pid*.log
+
+# Herramientas de IA (Cursor / Claude / Engram) - solo locales
+.cursor/
+.cursorrules
+CLAUDE.md
+.mcp.json
+.engram/
+.claude/
+ui/.atl/
+.atl/
