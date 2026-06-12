@@ -35,7 +35,7 @@ static lv_obj_t *make_settings_row(lv_obj_t *parent, const char *icon, uint32_t 
                                     bool clickable)
 {
     lv_obj_t *row = clickable ? lv_btn_create(parent) : lv_obj_create(parent);
-    lv_obj_set_width(row, kScreenWidth - 16);
+    lv_obj_set_width(row, UI_MAIN_W - 16);
     lv_obj_set_height(row, h);
     ui_style_card(row);
     lv_obj_set_style_shadow_width(row, 0, LV_PART_MAIN);
@@ -76,14 +76,14 @@ static lv_obj_t *make_settings_row(lv_obj_t *parent, const char *icon, uint32_t 
 lv_obj_t *ui_settings_tab_build(lv_obj_t *parent)
 {
     lv_obj_t *tab = lv_obj_create(parent);
-    lv_obj_set_size(tab, kScreenWidth, UI_CONTENT_H);
-    lv_obj_align(tab, LV_ALIGN_TOP_MID, 0, UI_HDR_H);
+    lv_obj_set_size(tab, UI_MAIN_W, UI_CONTENT_H);
+    lv_obj_set_pos(tab, UI_MAIN_X, UI_HDR_H);
     ui_style_screen(tab);
     lv_obj_add_flag(tab, LV_OBJ_FLAG_HIDDEN);
 
     lv_obj_t *list = lv_obj_create(tab);
-    lv_obj_set_size(list, kScreenWidth, UI_CONTENT_H);
-    lv_obj_align(list, LV_ALIGN_TOP_MID, 0, 0);
+    lv_obj_set_size(list, UI_MAIN_W, UI_CONTENT_H);
+    lv_obj_set_pos(list, 0, 0);
     lv_obj_set_style_bg_opa(list, LV_OPA_TRANSP, LV_PART_MAIN);
     lv_obj_set_style_border_width(list, 0, LV_PART_MAIN);
     lv_obj_set_style_pad_all(list, 8, LV_PART_MAIN);
@@ -105,7 +105,7 @@ lv_obj_t *ui_settings_tab_build(lv_obj_t *parent)
 
     /* Brillo global */
     lv_obj_t *brRow = lv_obj_create(list);
-    lv_obj_set_width(brRow, kScreenWidth - 16);
+    lv_obj_set_width(brRow, UI_MAIN_W - 16);
     lv_obj_set_height(brRow, 54);
     ui_style_card(brRow);
     lv_obj_clear_flag(brRow, LV_OBJ_FLAG_SCROLLABLE);
@@ -133,13 +133,13 @@ lv_obj_t *ui_settings_tab_build(lv_obj_t *parent)
     s_settingsBrilloSlider = lv_slider_create(brRow);
     lv_slider_set_range(s_settingsBrilloSlider, 0, 255);
     lv_slider_set_value(s_settingsBrilloSlider, 128, LV_ANIM_OFF);
-    lv_obj_set_width(s_settingsBrilloSlider, kScreenWidth - 40);
+    lv_obj_set_width(s_settingsBrilloSlider, UI_MAIN_W - 40);
     lv_obj_align(s_settingsBrilloSlider, LV_ALIGN_BOTTOM_MID, 0, 0);
     ui_style_slider(s_settingsBrilloSlider);
 
     /* Sensibilidad microfono */
     lv_obj_t *micRow = lv_obj_create(list);
-    lv_obj_set_width(micRow, kScreenWidth - 16);
+    lv_obj_set_width(micRow, UI_MAIN_W - 16);
     lv_obj_set_height(micRow, 68);
     ui_style_card(micRow);
     lv_obj_clear_flag(micRow, LV_OBJ_FLAG_SCROLLABLE);
@@ -177,7 +177,7 @@ lv_obj_t *ui_settings_tab_build(lv_obj_t *parent)
             lv_label_set_text(s_micSensPct, pctBuf);
         }
     }
-    lv_obj_set_width(s_micSensSlider, kScreenWidth - 40);
+    lv_obj_set_width(s_micSensSlider, UI_MAIN_W - 40);
     lv_obj_set_pos(s_micSensSlider, 0, 24);
     ui_style_slider(s_micSensSlider);
     ui_MicSensSlider = s_micSensSlider;
@@ -185,7 +185,7 @@ lv_obj_t *ui_settings_tab_build(lv_obj_t *parent)
     s_micSensBar = lv_bar_create(micRow);
     lv_bar_set_range(s_micSensBar, 0, MIC_BAR_MAX);
     lv_bar_set_value(s_micSensBar, 0, LV_ANIM_OFF);
-    lv_obj_set_size(s_micSensBar, kScreenWidth - 40, 8);
+    lv_obj_set_size(s_micSensBar, UI_MAIN_W - 40, 8);
     lv_obj_align(s_micSensBar, LV_ALIGN_BOTTOM_MID, 0, 0);
     lv_obj_set_style_bg_color(s_micSensBar, lv_color_hex(0x2A2A35), LV_PART_MAIN);
     lv_obj_set_style_bg_color(s_micSensBar, lv_color_hex(0x00CCCC), LV_PART_INDICATOR);
@@ -217,7 +217,7 @@ lv_obj_t *ui_settings_tab_build(lv_obj_t *parent)
 
     /* Modo noche */
     lv_obj_t *nightRow = lv_obj_create(list);
-    lv_obj_set_width(nightRow, kScreenWidth - 16);
+    lv_obj_set_width(nightRow, UI_MAIN_W - 16);
     lv_obj_set_height(nightRow, 36);
     ui_style_card(nightRow);
     lv_obj_clear_flag(nightRow, LV_OBJ_FLAG_SCROLLABLE);
@@ -257,7 +257,7 @@ lv_obj_t *ui_settings_tab_build(lv_obj_t *parent)
     s_configStatusLbl = lv_label_create(list);
     lv_label_set_text(s_configStatusLbl, "");
     lv_obj_set_style_text_color(s_configStatusLbl, lv_color_hex(0xFFAA44), LV_PART_MAIN);
-    lv_obj_set_width(s_configStatusLbl, kScreenWidth - 16);
+    lv_obj_set_width(s_configStatusLbl, UI_MAIN_W - 16);
     lv_obj_add_flag(s_configStatusLbl, LV_OBJ_FLAG_HIDDEN);
 #endif
 

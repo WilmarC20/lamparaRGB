@@ -10,6 +10,17 @@
 #define UI_CONTENT_H     (kScreenHeight - UI_HDR_H - UI_NAV_H)
 #define UI_COLOR_TOP_H   (UI_CONTENT_H - UI_PRESET_ROW_H - 2)
 
+/** Reserva izquierda para barra VU (ancho max = UI_VU_EDGE_W_WIDE). */
+#define UI_VU_EDGE_W_DEF   8
+#define UI_VU_EDGE_W_WIDE  10
+#define UI_VU_GUTTER       UI_VU_EDGE_W_WIDE
+#define UI_MAIN_X          UI_VU_GUTTER
+#define UI_MAIN_W          ((int)kScreenWidth - UI_VU_GUTTER)
+/** Panel derecho en pestañas color/efectos (rueda o lista a la izquierda). */
+#define UI_RIGHT_COL_X     118
+#define UI_RIGHT_COL_W     (UI_MAIN_W - UI_RIGHT_COL_X - 4)
+#define UI_RIGHT_PANEL_W   (UI_MAIN_W - 124)
+
 #define UI_COLOR_BG        0x0E0E12
 #define UI_COLOR_CARD        0x1A1A22
 #define UI_COLOR_CARD_BORDER 0x2A2A35

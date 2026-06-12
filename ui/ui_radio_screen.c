@@ -74,8 +74,8 @@ static lv_obj_t *make_transport_btn(lv_obj_t *parent, const char *sym, lv_coord_
 lv_obj_t *ui_radio_tab_build(lv_obj_t *parent)
 {
     lv_obj_t *tab = lv_obj_create(parent);
-    lv_obj_set_size(tab, kScreenWidth, UI_CONTENT_H);
-    lv_obj_align(tab, LV_ALIGN_TOP_MID, 0, UI_HDR_H);
+    lv_obj_set_size(tab, UI_MAIN_W, UI_CONTENT_H);
+    lv_obj_set_pos(tab, UI_MAIN_X, UI_HDR_H);
     ui_style_screen(tab);
     lv_obj_add_flag(tab, LV_OBJ_FLAG_HIDDEN);
 

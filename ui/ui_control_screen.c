@@ -43,8 +43,6 @@ static lv_obj_t *s_vuBar = NULL;
 
 /* VU lateral izquierdo: 30 segmentos, altura completa (90 LEDs, 3 por segmento) */
 #define UI_VU_SEG_COUNT       30
-#define UI_VU_EDGE_W_DEF      8
-#define UI_VU_EDGE_W_WIDE     10
 
 static lv_obj_t *s_vuSegs[UI_VU_SEG_COUNT];
 static int s_vuBarW = UI_VU_EDGE_W_DEF;
@@ -250,8 +248,8 @@ static void wifi_anim_stop(void)
 static void build_header(lv_obj_t *parent)
 {
     s_header = lv_obj_create(parent);
-    lv_obj_set_size(s_header, kScreenWidth, UI_HDR_H);
-    lv_obj_align(s_header, LV_ALIGN_TOP_MID, 0, 0);
+    lv_obj_set_size(s_header, UI_MAIN_W, UI_HDR_H);
+    lv_obj_set_pos(s_header, UI_MAIN_X, 0);
     lv_obj_set_style_bg_color(s_header, lv_color_hex(0x14141A), LV_PART_MAIN);
     lv_obj_set_style_border_width(s_header, 0, LV_PART_MAIN);
     lv_obj_set_style_pad_hor(s_header, 8, LV_PART_MAIN);
@@ -298,8 +296,8 @@ static void build_header(lv_obj_t *parent)
 static void build_color_tab(lv_obj_t *parent)
 {
     s_tabColor = lv_obj_create(parent);
-    lv_obj_set_size(s_tabColor, kScreenWidth, UI_CONTENT_H);
-    lv_obj_align(s_tabColor, LV_ALIGN_TOP_MID, 0, UI_HDR_H);
+    lv_obj_set_size(s_tabColor, UI_MAIN_W, UI_CONTENT_H);
+    lv_obj_set_pos(s_tabColor, UI_MAIN_X, UI_HDR_H);
     ui_style_screen(s_tabColor);
 
     /* Rueda mas gruesa hacia adentro (arco ancho), selector visible */
@@ -326,8 +324,8 @@ static void build_color_tab(lv_obj_t *parent)
     style_color_dot(s_colorCenter, 0, 255);
 
     lv_obj_t *rightCol = lv_obj_create(s_tabColor);
-    lv_obj_set_size(rightCol, 188, UI_COLOR_TOP_H);
-    lv_obj_set_pos(rightCol, 128, 0);
+    lv_obj_set_size(rightCol, UI_RIGHT_COL_W, UI_COLOR_TOP_H);
+    lv_obj_set_pos(rightCol, UI_RIGHT_COL_X, 0);
     lv_obj_set_style_bg_opa(rightCol, LV_OPA_TRANSP, LV_PART_MAIN);
     lv_obj_set_style_border_width(rightCol, 0, LV_PART_MAIN);
     lv_obj_set_style_pad_all(rightCol, 0, LV_PART_MAIN);
@@ -335,7 +333,7 @@ static void build_color_tab(lv_obj_t *parent)
 
     /* Panel brillo */
     lv_obj_t *brPanel = lv_obj_create(rightCol);
-    lv_obj_set_size(brPanel, 184, 58);
+    lv_obj_set_size(brPanel, UI_RIGHT_COL_W - 4, 58);
     lv_obj_set_pos(brPanel, 0, 2);
     ui_style_card(brPanel);
     lv_obj_clear_flag(brPanel, LV_OBJ_FLAG_SCROLLABLE);
@@ -362,13 +360,13 @@ static void build_color_tab(lv_obj_t *parent)
     ui_SliderBrillo = lv_slider_create(brPanel);
     lv_slider_set_range(ui_SliderBrillo, 0, 255);
     lv_slider_set_value(ui_SliderBrillo, 128, LV_ANIM_OFF);
-    lv_obj_set_width(ui_SliderBrillo, 163);
+    lv_obj_set_width(ui_SliderBrillo, UI_RIGHT_COL_W - 34);
     lv_obj_align(ui_SliderBrillo, LV_ALIGN_BOTTOM_MID, 0, 0);
     ui_style_slider(ui_SliderBrillo);
 
     /* Fiesta + Encendido: icono arriba, titulo, toggle abajo */
     lv_obj_t *toggleRow = lv_obj_create(rightCol);
-    lv_obj_set_size(toggleRow, 184, 56);
+    lv_obj_set_size(toggleRow, UI_RIGHT_COL_W - 4, 56);
     lv_obj_set_pos(toggleRow, 0, 64);
     lv_obj_set_style_bg_opa(toggleRow, LV_OPA_TRANSP, LV_PART_MAIN);
     lv_obj_set_style_border_width(toggleRow, 0, LV_PART_MAIN);
@@ -384,7 +382,7 @@ static void build_color_tab(lv_obj_t *parent)
 
     /* Presets a ancho completo en la parte inferior */
     s_presetRow = lv_obj_create(s_tabColor);
-    lv_obj_set_size(s_presetRow, kScreenWidth - 8, UI_PRESET_ROW_H);
+    lv_obj_set_size(s_presetRow, UI_MAIN_W - 8, UI_PRESET_ROW_H);
     lv_obj_align(s_presetRow, LV_ALIGN_BOTTOM_MID, 0, 0);
     lv_obj_set_style_bg_opa(s_presetRow, LV_OPA_TRANSP, LV_PART_MAIN);
     lv_obj_set_style_border_width(s_presetRow, 0, LV_PART_MAIN);
@@ -475,7 +473,7 @@ static void build_effects_color_panel(lv_obj_t *parent)
     };
 
     lv_obj_t *colPanel = lv_obj_create(parent);
-    lv_obj_set_size(colPanel, 184, 48);
+    lv_obj_set_size(colPanel, UI_RIGHT_COL_W - 4, 48);
     lv_obj_set_pos(colPanel, 0, 122);
     ui_style_card(colPanel);
     lv_obj_clear_flag(colPanel, LV_OBJ_FLAG_SCROLLABLE);
@@ -572,8 +570,8 @@ void ui_update_effect_color_bar(uint16_t effect_idx, uint16_t hue, uint8_t sat)
 static void build_effects_tab(lv_obj_t *parent)
 {
     s_tabEffects = lv_obj_create(parent);
-    lv_obj_set_size(s_tabEffects, kScreenWidth, UI_CONTENT_H);
-    lv_obj_align(s_tabEffects, LV_ALIGN_TOP_MID, 0, UI_HDR_H);
+    lv_obj_set_size(s_tabEffects, UI_MAIN_W, UI_CONTENT_H);
+    lv_obj_set_pos(s_tabEffects, UI_MAIN_X, UI_HDR_H);
     ui_style_screen(s_tabEffects);
     lv_obj_add_flag(s_tabEffects, LV_OBJ_FLAG_HIDDEN);
 
@@ -594,8 +592,8 @@ static void build_effects_tab(lv_obj_t *parent)
     }
 
     lv_obj_t *rightCol = lv_obj_create(s_tabEffects);
-    lv_obj_set_size(rightCol, 188, UI_CONTENT_H - 8);
-    lv_obj_set_pos(rightCol, 124, 4);
+    lv_obj_set_size(rightCol, UI_RIGHT_PANEL_W, UI_CONTENT_H - 8);
+    lv_obj_set_pos(rightCol, 120, 4);
     lv_obj_set_style_bg_opa(rightCol, LV_OPA_TRANSP, LV_PART_MAIN);
     lv_obj_set_style_border_width(rightCol, 0, LV_PART_MAIN);
     lv_obj_set_style_pad_all(rightCol, 0, LV_PART_MAIN);
@@ -603,7 +601,7 @@ static void build_effects_tab(lv_obj_t *parent)
 
     /* Panel velocidad */
     lv_obj_t *velPanel = lv_obj_create(rightCol);
-    lv_obj_set_size(velPanel, 184, 56);
+    lv_obj_set_size(velPanel, UI_RIGHT_PANEL_W - 4, 56);
     lv_obj_set_pos(velPanel, 0, 0);
     ui_style_card(velPanel);
     lv_obj_clear_flag(velPanel, LV_OBJ_FLAG_SCROLLABLE);
@@ -627,13 +625,13 @@ static void build_effects_tab(lv_obj_t *parent)
     ui_SliderVelocidad = lv_slider_create(velPanel);
     lv_slider_set_range(ui_SliderVelocidad, 0, 100);
     lv_slider_set_value(ui_SliderVelocidad, 50, LV_ANIM_OFF);
-    lv_obj_set_width(ui_SliderVelocidad, 168);
+    lv_obj_set_width(ui_SliderVelocidad, UI_RIGHT_PANEL_W - 29);
     lv_obj_align(ui_SliderVelocidad, LV_ALIGN_BOTTOM_MID, 0, 0);
     ui_style_slider(ui_SliderVelocidad);
 
     /* Panel direccion */
     lv_obj_t *dirPanel = lv_obj_create(rightCol);
-    lv_obj_set_size(dirPanel, 184, 56);
+    lv_obj_set_size(dirPanel, UI_RIGHT_PANEL_W - 4, 56);
     lv_obj_set_pos(dirPanel, 0, 60);
     ui_style_card(dirPanel);
     lv_obj_clear_flag(dirPanel, LV_OBJ_FLAG_SCROLLABLE);
@@ -702,14 +700,14 @@ static void build_nav_bar(lv_obj_t *parent)
     const int navCount = (int)(sizeof(kNavVisible) / sizeof(kNavVisible[0]));
 
     s_navBar = lv_obj_create(parent);
-    lv_obj_set_size(s_navBar, kScreenWidth, UI_NAV_H);
-    lv_obj_align(s_navBar, LV_ALIGN_BOTTOM_MID, 0, 0);
+    lv_obj_set_size(s_navBar, UI_MAIN_W, UI_NAV_H);
+    lv_obj_set_pos(s_navBar, UI_MAIN_X, (int)kScreenHeight - UI_NAV_H);
     lv_obj_set_style_bg_color(s_navBar, lv_color_hex(0x14141A), LV_PART_MAIN);
     lv_obj_set_style_border_width(s_navBar, 0, LV_PART_MAIN);
     lv_obj_set_style_pad_all(s_navBar, 0, LV_PART_MAIN);
     lv_obj_clear_flag(s_navBar, LV_OBJ_FLAG_SCROLLABLE);
 
-    const int btnW = kScreenWidth / navCount;
+    const int btnW = UI_MAIN_W / navCount;
     for (int n = 0; n < navCount; n++) {
         const uint8_t tab = kNavVisible[n];
 
