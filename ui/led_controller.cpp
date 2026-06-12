@@ -19,6 +19,34 @@ static uint16_t calibIndex = 0;
 static uint32_t solidColor = 0xFF0000;
 static uint16_t effectSpeed = 200;
 static bool effectReverse = false;
+static uint8_t s_previewRgb[LED_COUNT * 3];
+static bool s_previewValid = false;
+
+static void led_preview_store_rgb(const uint8_t *rgb, uint16_t count)
+{
+    if (!rgb) {
+        return;
+    }
+    if (count > LED_COUNT) {
+        count = LED_COUNT;
+    }
+    memcpy(s_previewRgb, rgb, (size_t)count * 3U);
+    if (count < LED_COUNT) {
+        memset(s_previewRgb + (size_t)count * 3U, 0, (size_t)(LED_COUNT - count) * 3U);
+    }
+    s_previewValid = true;
+}
+
+static void led_preview_store_from_strip(void)
+{
+    for (uint16_t i = 0; i < LED_COUNT; i++) {
+        const uint32_t c = ws2812fx.getPixelColor(i);
+        s_previewRgb[i * 3U] = (uint8_t)(c >> 16);
+        s_previewRgb[i * 3U + 1U] = (uint8_t)(c >> 8);
+        s_previewRgb[i * 3U + 2U] = (uint8_t)c;
+    }
+    s_previewValid = true;
+}
 
 static const char *kEffectNames[] = {
     "Solido",
@@ -93,6 +121,7 @@ static void led_all_off(void)
         ws2812fx.setPixelColor(i, 0);
     }
     ws2812fx.show();
+    s_previewValid = false;
 }
 
 void led_controller_apply(lamp_state_t *state)
@@ -135,6 +164,7 @@ void led_controller_apply(lamp_state_t *state)
                                    ws2812fx.Color(rgb[i * 3], rgb[i * 3 + 1], rgb[i * 3 + 2]));
         }
         ws2812fx.show();
+        led_preview_store_rgb(rgb, LED_COUNT);
         state->dirty = false;
         return;
     }
@@ -184,6 +214,7 @@ void led_controller_service(void)
     if (outputPaused || calibActive || s_staticColombia) return;
     if (!partyActive) {
         ws2812fx.service();
+        led_preview_store_from_strip();
     }
 }
 
@@ -195,6 +226,23 @@ void led_controller_set_party_pixels(const uint8_t *rgb, uint16_t count)
         ws2812fx.setPixelColor(i, ws2812fx.Color(rgb[i * 3], rgb[i * 3 + 1], rgb[i * 3 + 2]));
     }
     ws2812fx.show();
+    led_preview_store_rgb(rgb, count);
+}
+
+void led_controller_copy_preview(uint8_t *rgb, uint16_t max_count)
+{
+    if (!rgb || max_count == 0) {
+        return;
+    }
+    if (max_count > LED_COUNT) {
+        max_count = LED_COUNT;
+    }
+    memcpy(rgb, s_previewRgb, (size_t)max_count * 3U);
+}
+
+bool led_controller_preview_valid(void)
+{
+    return s_previewValid;
 }
 
 static void led_calib_render(void)
@@ -277,6 +325,17 @@ void led_controller_set_party_pixels(const uint8_t *rgb, uint16_t count)
 {
     (void)rgb;
     (void)count;
+}
+
+void led_controller_copy_preview(uint8_t *rgb, uint16_t max_count)
+{
+    (void)rgb;
+    (void)max_count;
+}
+
+bool led_controller_preview_valid(void)
+{
+    return false;
 }
 
 extern "C" {

@@ -347,9 +347,6 @@ static void flag_base_rgb(flag_zone_t zone, uint8_t *r, uint8_t *g, uint8_t *b)
 
 static void fx_flag_colombia(lamp_state_t *state, uint8_t *rgb)
 {
-    /* Las tres señales salen del mismo pipeline AGC (norm_*): misma escala
-     * con mic o radio, sin depender del slider de sensibilidad.
-     * x1.15 = +15% de sensibilidad a pedido del usuario (clamp en norm01). */
     const float tgtLvl = (float)audio_input_get_norm_level() * 1.15f;
     const float tgtBass = (float)audio_input_get_norm_bass() * 1.15f;
     const float tgtHigh = (float)audio_input_get_norm_high() * 1.15f;
@@ -380,11 +377,16 @@ static void fx_flag_colombia(lamp_state_t *state, uint8_t *rgb)
     const float lvlN = flag_norm01(s_flagLvlSm);
     const float bassN = flag_norm01(s_flagBassSm);
     const float highN = flag_norm01(s_flagHighSm);
-    const float lvlD = flag_dyn(lvlN);
-    const float bassD = flag_dyn(bassN);
-    const float highD = flag_dyn(highN);
-    const float masterD = flag_dyn(fmaxf(lvlN, fmaxf(bassN, highN)));
-    const float waveMix = 0.08f + 0.92f * masterD;
+    /* Curva mas suave en pantalla: bandera legible en silencio, sube con audio */
+    const float lvlA = powf(lvlN, 1.35f);
+    const float bassA = powf(bassN, 1.35f);
+    const float highA = powf(highN, 1.35f);
+    const float masterA = fmaxf(lvlA, fmaxf(bassA, highA));
+    const float waveMix = 0.35f + 0.65f * masterA;
+
+    /* Piso: franjas siempre distinguibles (~28% brillo); techo con musica */
+    const float idleFloor = 0.28f;
+    const uint8_t maxV = state->brightness > 0 ? state->brightness : 1;
 
     for (uint16_t i = 0; i < LED_COUNT; i++) {
         const flag_zone_t zone = flag_zone_of(i);
@@ -392,29 +394,27 @@ static void fx_flag_colombia(lamp_state_t *state, uint8_t *rgb)
         flag_base_rgb(zone, &r0, &g0, &b0);
 
         const float wave = 0.5f + 0.5f * sinf(s_flagPhase + (float)i * 0.28f);
-        float energy = 0.02f + (0.05f * masterD);
+        float react = 0.0f;
 
         if (zone == FLAG_ZONE_YELLOW) {
-            energy += 0.95f * lvlD * (0.05f + 0.95f * wave * waveMix);
+            react = lvlA * (0.15f + 0.85f * wave * waveMix);
         } else if (zone == FLAG_ZONE_BLUE) {
-            energy += 0.95f * highD * (0.05f + 0.95f * wave * waveMix);
+            react = highA * (0.15f + 0.85f * wave * waveMix);
         } else {
-            energy += 0.95f * bassD * (0.05f + 0.95f * wave * waveMix);
-            energy += 0.75f * beatFlash * bassD;
+            react = bassA * (0.15f + 0.85f * wave * waveMix);
+            react += 0.55f * beatFlash * bassA;
         }
 
-        energy *= 0.12f + (0.88f * masterD);
-
+        float energy = idleFloor + (1.0f - idleFloor) * react;
         if (energy > 1.0f) {
             energy = 1.0f;
         }
 
-        /* Escala = energia * brillo del usuario (antes el brillo se cancelaba) */
-        const uint16_t s8 = (uint16_t)(energy * (float)state->brightness + 0.5f);
+        const uint8_t br = (uint8_t)((float)maxV * energy);
         set_pixel_rgb(rgb, i,
-                      (uint8_t)(((uint16_t)r0 * s8) / 255U),
-                      (uint8_t)(((uint16_t)g0 * s8) / 255U),
-                      (uint8_t)(((uint16_t)b0 * s8) / 255U));
+                      (uint8_t)(((uint16_t)r0 * br) / maxV),
+                      (uint8_t)(((uint16_t)g0 * br) / maxV),
+                      (uint8_t)(((uint16_t)b0 * br) / maxV));
     }
 }
 

@@ -865,16 +865,45 @@ void ui_app_sync_from_state(void)
     syncingUi = false;
 }
 
+static void ui_app_apply_user_color(uint16_t hue, uint8_t sat, bool from_wheel)
+{
+    appState.hue = hue;
+    appState.saturation = sat;
+
+    if (appState.musicMode || appState.musicFx == MUSIC_FX_WAVE) {
+        appState.musicMode = true;
+        appState.musicFx = MUSIC_FX_SOLID;
+        music_effects_reset();
+    } else {
+        appState.musicMode = false;
+        appState.musicFx = MUSIC_FX_NONE;
+        appState.effect = LAMP_EFFECT_SOLID;
+    }
+
+    if (from_wheel && ui_ColorWheel) {
+        /* wheel already moved */
+    } else if (ui_ColorWheel) {
+        syncingUi = true;
+        lv_color_hsv_t hsv;
+        hsv.h = hue;
+        hsv.s = (uint8_t)((sat * 100U) / 255U);
+        hsv.v = 100;
+        lv_colorwheel_set_hsv(ui_ColorWheel, hsv);
+        syncingUi = false;
+    }
+
+    ui_update_color_preview(appState.hue, appState.saturation);
+    ui_highlight_effect(ui_effect_dropdown_index(&appState));
+    ui_app_sync_effect_color_bar();
+    lamp_state_mark_dirty(&appState);
+    ui_app_notify_state_changed();
+}
+
 static void on_color_changed(lv_event_t *e)
 {
     if (syncingUi || lv_event_get_code(e) != LV_EVENT_VALUE_CHANGED) return;
     lv_color_hsv_t hsv = lv_colorwheel_get_hsv(ui_ColorWheel);
-    appState.hue = hsv.h;
-    appState.saturation = (uint8_t)((hsv.s * 255) / 100);
-    ui_update_color_preview(appState.hue, appState.saturation);
-    ui_app_sync_effect_color_bar();
-    lamp_state_mark_dirty(&appState);
-    apply_and_report();
+    ui_app_apply_user_color(hsv.h, (uint8_t)((hsv.s * 255) / 100), true);
 }
 
 static void on_brightness_changed(lv_event_t *e)
@@ -981,6 +1010,11 @@ static void on_preset_clicked(lv_event_t *e)
         { 210, 110 }, { 0, 0 }, { 28, 170 }, { 0, 255 }, { 85, 255 }, { 170, 255 }, { 280, 255 }
     };
     if (idx < 0 || idx >= 7) return;
+
+    if (appState.musicMode || appState.musicFx == MUSIC_FX_WAVE) {
+        ui_app_apply_user_color(presets[idx].h, presets[idx].s, false);
+        return;
+    }
 
     const bool sameColor = (appState.hue == presets[idx].h && appState.saturation == presets[idx].s);
     const bool staticSolid = (!appState.musicMode && appState.musicFx == MUSIC_FX_NONE &&
@@ -1394,21 +1428,6 @@ void ui_app_loop(void)
         }
     }
     {
-        /* Mini-VU del header (~8 fps, solo con modo musical activo) */
-        static uint32_t s_lastVuMs = 0;
-        const uint32_t nowMs = millis();
-        if ((nowMs - s_lastVuMs) >= 120U) {
-            s_lastVuMs = nowMs;
-            if (lamp_state_music_active(&appState) && appState.power &&
-                (audio_input_is_running() || audio_input_external_active())) {
-                ui_update_header_vu((audio_input_get_norm_level() * 100) / 400);
-            } else {
-                ui_update_header_vu(-1);
-            }
-        }
-    }
-
-    {
         static uint32_t s_lastSettingsMs = 0;
         static uint32_t s_lastLoudMs = 0;
         const uint32_t nowMs = millis();
@@ -1450,6 +1469,24 @@ void ui_app_loop(void)
         }
     }
 #endif
+
+    {
+        /* VU lateral: espejo del efecto actual (musical, estatico o WS2812FX) */
+        static uint32_t s_lastVuMs = 0;
+        const uint32_t nowMs = millis();
+        if ((nowMs - s_lastVuMs) >= 120U) {
+            s_lastVuMs = nowMs;
+            if (appState.power && !led_calib_is_active() &&
+                led_controller_preview_valid()) {
+                uint8_t rgb[LED_COUNT * 3];
+                led_controller_copy_preview(rgb, LED_COUNT);
+                ui_update_edge_vu_preview(rgb, LED_COUNT,
+                                          appState.musicFx == MUSIC_FX_WAVE);
+            } else {
+                ui_update_edge_vu_hide();
+            }
+        }
+    }
 
     ir_control_service();
 

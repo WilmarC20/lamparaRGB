@@ -20,6 +20,9 @@ void led_controller_set_speed(uint16_t speed);
 void led_controller_set_reverse(bool reverse);
 uint16_t led_controller_get_speed(void);
 bool led_controller_get_reverse(void);
+/** Ultimo frame RGB enviado a la tira (90 LEDs, orden fisico). */
+void led_controller_copy_preview(uint8_t *rgb, uint16_t max_count);
+bool led_controller_preview_valid(void);
 
 #ifdef __cplusplus
 }

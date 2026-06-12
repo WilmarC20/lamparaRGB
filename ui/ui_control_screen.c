@@ -5,6 +5,7 @@
 #include "ui_radio_screen.h"
 #include "lampara_ui.h"
 #include "ui_theme.h"
+#include "pins.h"
 #include "lvgl.h"
 #include <stdio.h>
 #include <string.h>
@@ -36,7 +37,19 @@ static lv_obj_t *s_effectColorDots[7];
 static lv_obj_t *s_btnDirLeft = NULL;
 static lv_obj_t *s_btnDirRight = NULL;
 static lv_obj_t *s_vuBar = NULL;
-static lv_obj_t *s_vuFill = NULL;
+
+#define UI_EFFECT_COLOR_BAR_W 168
+#define UI_EFFECT_COLOR_SEGMENTS 7
+
+/* VU lateral izquierdo: 30 segmentos, altura completa (90 LEDs, 3 por segmento) */
+#define UI_VU_SEG_COUNT       30
+#define UI_VU_EDGE_W_DEF      8
+#define UI_VU_EDGE_W_WIDE     10
+
+static lv_obj_t *s_vuSegs[UI_VU_SEG_COUNT];
+static int s_vuBarW = UI_VU_EDGE_W_DEF;
+
+static void ui_vu_raise(void);
 static lv_obj_t *s_lblBrilloPct = NULL;
 static lv_obj_t *s_lblVelPct = NULL;
 static lv_obj_t *s_lblSettingsBrillo = NULL;
@@ -55,9 +68,6 @@ static lv_event_cb_t s_cbDir = NULL;
 static lv_event_cb_t s_cbEffectColor = NULL;
 static void (*s_cbSettingsBind)(void) = NULL;
 static void (*s_cbRadioBind)(void) = NULL;
-
-#define UI_EFFECT_COLOR_BAR_W 168
-#define UI_EFFECT_COLOR_SEGMENTS 7
 
 static const struct {
     const char *title;
@@ -527,20 +537,6 @@ void ui_update_effect_color_bar(uint16_t effect_idx, uint16_t hue, uint8_t sat)
     uint8_t count = 0;
     ui_effect_color_stops(effect_idx, hue, sat, hues, &count, UI_EFFECT_COLOR_SEGMENTS);
 
-    /* VU de borde: degradado vertical con los colores del efecto activo.
-     * Se actualiza siempre, incluso si la pestaña Efectos no fue abierta
-     * todavia (s_effectColorBar se construye lazy). */
-    if (s_vuFill && count > 0) {
-        const uint8_t vuSat = (mode == UI_FX_COLOR_RAINBOW) ? 255 : sat;
-        const lv_color_t top = ui_color_from_hue_sat(hues[0], vuSat);
-        const lv_color_t bottom = ui_color_from_hue_sat(hues[count - 1], vuSat);
-        lv_obj_set_style_bg_color(s_vuFill, top, LV_PART_MAIN);
-        lv_obj_set_style_bg_grad_color(s_vuFill, bottom, LV_PART_MAIN);
-        lv_obj_set_style_bg_grad_dir(s_vuFill,
-                                     (count > 1) ? LV_GRAD_DIR_VER : LV_GRAD_DIR_NONE,
-                                     LV_PART_MAIN);
-    }
-
     if (!s_effectColorBar) {
         return;
     }
@@ -774,6 +770,7 @@ static void ensure_effects_tab(void)
     build_effects_tab(ui_Control);
     s_effectsBuilt = true;
     bind_effects_controls();
+    ui_vu_raise();
 }
 
 static void ensure_radio_tab(void)
@@ -798,6 +795,7 @@ static void ensure_settings_tab(void)
     if (s_cbSettingsBind) {
         s_cbSettingsBind();
     }
+    ui_vu_raise();
 }
 
 void ui_control_register_effect_color_cb(lv_event_cb_t cb)
@@ -886,6 +884,8 @@ void ui_set_active_tab(uint8_t tab)
             else lv_obj_add_flag(s_navIndicators[i], LV_OBJ_FLAG_HIDDEN);
         }
     }
+
+    ui_vu_raise();
 }
 
 uint8_t ui_get_active_tab(void)
@@ -903,55 +903,150 @@ bool ui_is_radio_tab(void)
     return s_activeTab == UI_TAB_RADIO;
 }
 
-/* VU de borde: franja vertical pegada al lado izquierdo, 100% del alto,
- * sube desde abajo con el nivel y toma los colores del efecto activo. */
-#define UI_VU_EDGE_W 4
+/* VU lateral izquierdo: espejo vertical de la tira (100% alto pantalla). */
+/* Colombia en VU: proporciones bandera (50% amarillo), no tercios iguales de la tira. */
+#define UI_VU_FLAG_SEG_RED     8
+#define UI_VU_FLAG_SEG_BLUE    7
+#define UI_VU_FLAG_SEG_YELLOW 15
+#define UI_VU_FLAG_LED_ZONE   30U
+
+static void ui_vu_led_range_for_seg(int seg, bool colombia, uint16_t led_count,
+                                    uint16_t *i0, uint16_t *i1)
+{
+    if (!colombia) {
+        *i0 = (uint16_t)((uint32_t)seg * (uint32_t)led_count / (uint32_t)UI_VU_SEG_COUNT);
+        *i1 = (uint16_t)((uint32_t)(seg + 1) * (uint32_t)led_count / (uint32_t)UI_VU_SEG_COUNT);
+        return;
+    }
+
+    const int redEnd = UI_VU_FLAG_SEG_RED;
+    const int blueEnd = redEnd + UI_VU_FLAG_SEG_BLUE;
+    if (seg < redEnd) {
+        const int local = seg;
+        *i0 = (uint16_t)((uint32_t)local * UI_VU_FLAG_LED_ZONE / (uint32_t)UI_VU_FLAG_SEG_RED);
+        *i1 = (uint16_t)((uint32_t)(local + 1) * UI_VU_FLAG_LED_ZONE / (uint32_t)UI_VU_FLAG_SEG_RED);
+    } else if (seg < blueEnd) {
+        const int local = seg - redEnd;
+        *i0 = UI_VU_FLAG_LED_ZONE +
+              (uint16_t)((uint32_t)local * UI_VU_FLAG_LED_ZONE / (uint32_t)UI_VU_FLAG_SEG_BLUE);
+        *i1 = UI_VU_FLAG_LED_ZONE +
+              (uint16_t)((uint32_t)(local + 1) * UI_VU_FLAG_LED_ZONE / (uint32_t)UI_VU_FLAG_SEG_BLUE);
+    } else {
+        const int local = seg - blueEnd;
+        *i0 = UI_VU_FLAG_LED_ZONE * 2U +
+              (uint16_t)((uint32_t)local * UI_VU_FLAG_LED_ZONE / (uint32_t)UI_VU_FLAG_SEG_YELLOW);
+        *i1 = UI_VU_FLAG_LED_ZONE * 2U +
+              (uint16_t)((uint32_t)(local + 1) * UI_VU_FLAG_LED_ZONE / (uint32_t)UI_VU_FLAG_SEG_YELLOW);
+    }
+
+    if (*i1 > led_count) {
+        *i1 = led_count;
+    }
+}
+
+static void ui_vu_apply_width(int w)
+{
+    if (!s_vuBar || w == s_vuBarW) {
+        return;
+    }
+    s_vuBarW = w;
+    lv_obj_set_width(s_vuBar, w);
+    for (int i = 0; i < UI_VU_SEG_COUNT; i++) {
+        if (s_vuSegs[i]) {
+            lv_obj_set_width(s_vuSegs[i], w);
+        }
+    }
+}
+
+static void ui_vu_raise(void)
+{
+    if (!s_vuBar) {
+        return;
+    }
+    const int w = (s_activeTab == UI_TAB_EFFECTS || s_activeTab == UI_TAB_SETTINGS)
+                      ? UI_VU_EDGE_W_WIDE
+                      : UI_VU_EDGE_W_DEF;
+    ui_vu_apply_width(w);
+    lv_obj_move_foreground(s_vuBar);
+}
 
 static void build_edge_vu(lv_obj_t *parent)
 {
     s_vuBar = lv_obj_create(parent);
-    lv_obj_set_size(s_vuBar, UI_VU_EDGE_W, kScreenHeight);
+    lv_obj_set_size(s_vuBar, UI_VU_EDGE_W_DEF, kScreenHeight);
     lv_obj_set_pos(s_vuBar, 0, 0);
     lv_obj_set_style_bg_color(s_vuBar, lv_color_hex(0x101016), LV_PART_MAIN);
-    lv_obj_set_style_bg_opa(s_vuBar, LV_OPA_40, LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(s_vuBar, LV_OPA_20, LV_PART_MAIN);
     lv_obj_set_style_border_width(s_vuBar, 0, LV_PART_MAIN);
     lv_obj_set_style_radius(s_vuBar, 0, LV_PART_MAIN);
     lv_obj_set_style_pad_all(s_vuBar, 0, LV_PART_MAIN);
     lv_obj_clear_flag(s_vuBar, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_clear_flag(s_vuBar, LV_OBJ_FLAG_CLICKABLE);
 
-    s_vuFill = lv_obj_create(s_vuBar);
-    lv_obj_set_size(s_vuFill, UI_VU_EDGE_W, 4);
-    lv_obj_set_pos(s_vuFill, 0, kScreenHeight - 4);
-    lv_obj_set_style_bg_color(s_vuFill, lv_color_hex(UI_COLOR_ACCENT), LV_PART_MAIN);
-    lv_obj_set_style_bg_opa(s_vuFill, LV_OPA_80, LV_PART_MAIN);
-    lv_obj_set_style_border_width(s_vuFill, 0, LV_PART_MAIN);
-    lv_obj_set_style_radius(s_vuFill, 0, LV_PART_MAIN);
-    lv_obj_clear_flag(s_vuFill, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_clear_flag(s_vuFill, LV_OBJ_FLAG_CLICKABLE);
+    const int segH = (int)kScreenHeight / UI_VU_SEG_COUNT;
+    const int segRem = (int)kScreenHeight - segH * UI_VU_SEG_COUNT;
+    for (int i = 0; i < UI_VU_SEG_COUNT; i++) {
+        s_vuSegs[i] = lv_obj_create(s_vuBar);
+        const int h = segH + ((i == UI_VU_SEG_COUNT - 1) ? segRem : 0);
+        lv_obj_set_size(s_vuSegs[i], UI_VU_EDGE_W_DEF, h);
+        /* i=0 abajo (LED bajo), i=29 arriba (LED alto) */
+        lv_obj_set_pos(s_vuSegs[i], 0, (UI_VU_SEG_COUNT - 1 - i) * segH);
+        lv_obj_set_style_bg_color(s_vuSegs[i], lv_color_hex(0x101016), LV_PART_MAIN);
+        lv_obj_set_style_bg_opa(s_vuSegs[i], LV_OPA_COVER, LV_PART_MAIN);
+        lv_obj_set_style_border_width(s_vuSegs[i], 0, LV_PART_MAIN);
+        lv_obj_set_style_radius(s_vuSegs[i], 0, LV_PART_MAIN);
+        lv_obj_clear_flag(s_vuSegs[i], LV_OBJ_FLAG_SCROLLABLE);
+        lv_obj_clear_flag(s_vuSegs[i], LV_OBJ_FLAG_CLICKABLE);
+    }
 
     lv_obj_add_flag(s_vuBar, LV_OBJ_FLAG_HIDDEN);
 }
 
-void ui_update_header_vu(int pct)
+void ui_update_edge_vu_preview(const uint8_t *rgb, uint16_t led_count, bool colombia_layout)
 {
-    if (!s_vuBar || !s_vuFill) {
+    if (!s_vuBar || !rgb || led_count == 0) {
         return;
     }
-    if (pct < 0) {
-        lv_obj_add_flag(s_vuBar, LV_OBJ_FLAG_HIDDEN);
-        return;
+    if (led_count > LED_COUNT) {
+        led_count = LED_COUNT;
     }
-    if (pct > 100) {
-        pct = 100;
-    }
+
     lv_obj_clear_flag(s_vuBar, LV_OBJ_FLAG_HIDDEN);
-    int h = ((int)kScreenHeight * pct) / 100;
-    if (h < 4) {
-        h = 4;
+    ui_vu_raise();
+
+    for (int s = 0; s < UI_VU_SEG_COUNT; s++) {
+        if (!s_vuSegs[s]) {
+            continue;
+        }
+        uint16_t i0 = 0;
+        uint16_t i1 = 0;
+        ui_vu_led_range_for_seg(s, colombia_layout, led_count, &i0, &i1);
+        if (i1 <= i0) {
+            continue;
+        }
+
+        uint32_t sumR = 0;
+        uint32_t sumG = 0;
+        uint32_t sumB = 0;
+        for (uint16_t i = i0; i < i1; i++) {
+            sumR += rgb[(uint32_t)i * 3U];
+            sumG += rgb[(uint32_t)i * 3U + 1U];
+            sumB += rgb[(uint32_t)i * 3U + 2U];
+        }
+        const uint16_t n = (uint16_t)(i1 - i0);
+        const uint8_t r = (uint8_t)(sumR / n);
+        const uint8_t g = (uint8_t)(sumG / n);
+        const uint8_t b = (uint8_t)(sumB / n);
+        lv_obj_set_style_bg_color(s_vuSegs[s], lv_color_make(r, g, b), LV_PART_MAIN);
+        lv_obj_set_style_bg_opa(s_vuSegs[s], LV_OPA_COVER, LV_PART_MAIN);
     }
-    lv_obj_set_height(s_vuFill, h);
-    lv_obj_set_y(s_vuFill, (int)kScreenHeight - h);
+}
+
+void ui_update_edge_vu_hide(void)
+{
+    if (s_vuBar) {
+        lv_obj_add_flag(s_vuBar, LV_OBJ_FLAG_HIDDEN);
+    }
 }
 
 void ui_update_brightness_label(uint8_t brightness)

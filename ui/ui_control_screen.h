@@ -21,8 +21,10 @@ bool ui_is_settings_tab(void);
 bool ui_is_radio_tab(void);
 void ui_update_brightness_label(uint8_t brightness);
 void ui_update_speed_label(uint8_t pct);
-/** Mini-VU del header: 0-100 muestra nivel, negativo lo oculta */
-void ui_update_header_vu(int pct);
+/** VU lateral izquierdo (100% alto): espejo RGB de la tira (rgb = 90*3).
+ *  colombia_layout: franjas 25/25/50 (amarillo mas ancho) en lugar de 1:1 con LEDs. */
+void ui_update_edge_vu_preview(const uint8_t *rgb, uint16_t led_count, bool colombia_layout);
+void ui_update_edge_vu_hide(void);
 typedef enum {
     UI_WIFI_DISCONNECTED = 0,
     UI_WIFI_CONNECTING,

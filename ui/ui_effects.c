@@ -126,8 +126,8 @@ void ui_effect_color_stops(uint16_t idx, uint16_t base_hue, uint8_t sat,
     uint8_t n = 0;
 
     if (idx == 9) {
-        /* Musica Colombia: amarillo, azul, rojo fijos */
-        static const uint16_t kFlagHues[] = { 51, 235, 0 };
+        /* Musica Colombia: rojo, azul, amarillo (orden fisico LED 0->89) */
+        static const uint16_t kFlagHues[] = { 0, 235, 51 };
         n = (uint8_t)(sizeof(kFlagHues) / sizeof(kFlagHues[0]));
         if (n > max_count) {
             n = max_count;
