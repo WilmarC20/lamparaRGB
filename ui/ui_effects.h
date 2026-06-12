@@ -8,7 +8,7 @@
 extern "C" {
 #endif
 
-#define UI_EFFECT_OPTION_COUNT 12
+#define UI_EFFECT_OPTION_COUNT 13
 
 typedef enum {
     UI_FX_COLOR_SINGLE = 0,

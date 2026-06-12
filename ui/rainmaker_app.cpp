@@ -50,7 +50,7 @@ static Param s_partyParam("PartyMode", ESP_RMAKER_PARAM_TOGGLE, value(false),
 static const char *kEffectOptions[] = {
     "Solido", "Arcoiris", "Persecucion", "Onda", "Respiracion", "Estrobo",
     "Musica Barra", "Musica Fiesta", "Musica Persecucion", "Musica Colombia",
-    "Musica Respiracion", "Musica Estrobo",
+    "Musica Respiracion", "Musica Estrobo", "Musica Beat",
 };
 
 static const int RM_EFFECT_OPTION_COUNT =
@@ -65,6 +65,7 @@ static const char *rm_music_fx_option_name(music_fx_t fx)
         case MUSIC_FX_WAVE:   return "Musica Colombia";
         case MUSIC_FX_BREATH: return "Musica Respiracion";
         case MUSIC_FX_STROBE: return "Musica Estrobo";
+        case MUSIC_FX_BEAT:   return "Musica Beat";
         default:              return NULL;
     }
 }

@@ -16,7 +16,8 @@ static const char *kUiEffectOptions =
     "Musica Persecucion\n"
     "Musica Colombia\n"
     "Musica Respiracion\n"
-    "Musica Estrobo";
+    "Musica Estrobo\n"
+    "Musica Beat";
 
 const char *ui_effect_dropdown_options(void)
 {
@@ -37,7 +38,8 @@ const char *ui_effect_name_at(uint16_t idx)
         "Musica Persecucion",
         "Musica Colombia",
         "Musica Respiracion",
-        "Musica Estrobo"
+        "Musica Estrobo",
+        "Musica Beat"
     };
     if (idx >= UI_EFFECT_OPTION_COUNT) {
         return "Solido";
@@ -59,7 +61,8 @@ const char *ui_effect_icon_at(uint16_t idx)
         LV_SYMBOL_NEXT,
         LV_SYMBOL_AUDIO,
         LV_SYMBOL_EYE_OPEN,
-        LV_SYMBOL_WARNING
+        LV_SYMBOL_WARNING,
+        LV_SYMBOL_BELL
     };
     if (idx >= UI_EFFECT_OPTION_COUNT) {
         return LV_SYMBOL_TINT;
@@ -86,7 +89,8 @@ uint32_t ui_effect_icon_color(uint16_t idx)
         0x00CCCC,
         0xCE1126,   /* Musica Colombia: rojo bandera */
         0x00CCCC,
-        0x00CCCC
+        0x00CCCC,
+        0xFF4488    /* Musica Beat */
     };
     if (idx >= UI_EFFECT_OPTION_COUNT) {
         return 0xE8E8F0;
@@ -101,6 +105,7 @@ ui_fx_color_mode_t ui_effect_color_mode(uint16_t idx)
         case 2:  /* Persecucion */
         case 7:  /* Musica Fiesta */
         case 9:  /* Musica Colombia (colores fijos de bandera) */
+        case 12: /* Musica Beat (color automatico por beat) */
             return UI_FX_COLOR_RAINBOW;
         case 6:  /* Musica Barra */
         case 8:  /* Musica Persecucion */

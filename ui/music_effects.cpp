@@ -26,8 +26,34 @@ static const char *kFxNames[] = {
     "Colombia",
     "Respiracion",
     "Estrobo",
+    "Beat",
     "Solido"
 };
+
+/* Paletas para Fiesta/Beat (tonos 0-255): idx 0 = arcoiris rotativo */
+static const uint8_t kPaletteHues[4][3] = {
+    { 0, 85, 170 },     /* Arcoiris (no se usa: rota libre) */
+    { 36, 100, 16 },    /* Tropical: amarillo, verde, naranja */
+    { 0, 200, 170 },    /* Rock: rojo, purpura, azul */
+    { 130, 165, 195 },  /* Chill: cian, azul, violeta */
+};
+static const char *kPaletteNames[4] = { "Arcoiris", "Tropical", "Rock", "Chill" };
+static uint8_t s_palette = 0;
+
+void music_effects_set_palette(uint8_t idx)
+{
+    s_palette = (idx < 4U) ? idx : 0U;
+}
+
+uint8_t music_effects_get_palette(void)
+{
+    return s_palette;
+}
+
+const char *music_effects_palette_name(uint8_t idx)
+{
+    return kPaletteNames[(idx < 4U) ? idx : 0U];
+}
 
 const char *music_fx_name(music_fx_t fx)
 {
@@ -96,49 +122,114 @@ static void fx_bar(lamp_state_t *state, uint8_t *rgb)
     }
 }
 
+/* Fiesta 2.0: cada carrete responde a una señal real del pipeline AGC.
+ * Carrete inferior = graves (+ flash de beat), medio = nivel, alto = brillos.
+ * Paleta 0: colores rotando; paletas 1-3: tono fijo por carrete. */
+static float s_partyHue = 0.0f;
+static float s_partySm[3] = { 0.0f, 0.0f, 0.0f };
+static uint32_t s_partyBeatSeen = 0;
+static uint32_t s_partyFlashMs = 0;
+
 static void fx_party(lamp_state_t *state, uint8_t *rgb)
 {
-    audio_levels_t levels;
-    if (!audio_input_get_levels(&levels)) return;
-
-    const int soundLevel = audio_input_get_music_level();
-
-    float maxBand = (float)soundLevel;
-    if (maxBand < 1.0f) maxBand = 1.0f;
-
-    for (int i = 0; i < AUDIO_BAND_COUNT; i++) {
-        if (levels.bands[i] > maxBand) maxBand = levels.bands[i];
+    const float tgt[3] = {
+        (float)audio_input_get_norm_bass(),
+        (float)audio_input_get_norm_level(),
+        (float)audio_input_get_norm_high(),
+    };
+    for (int s = 0; s < 3; s++) {
+        const float a = (tgt[s] > s_partySm[s]) ? 0.60f : 0.12f;
+        s_partySm[s] += (tgt[s] - s_partySm[s]) * a;
     }
 
-    const uint16_t ledsPerBand = LEDS_PER_LEVEL / AUDIO_BAND_COUNT;
-    const uint16_t bandRemainder = LEDS_PER_LEVEL % AUDIO_BAND_COUNT;
-
-    for (int level = 0; level < LED_LEVEL_COUNT; level++) {
-        const uint16_t base = led_level_start((uint8_t)level);
-        uint16_t ringOffset = 0;
-
-        for (int band = 0; band < AUDIO_BAND_COUNT; band++) {
-            const uint16_t bandLen = ledsPerBand + ((band < (int)bandRemainder) ? 1U : 0U);
-            float norm = levels.bands[band] / maxBand;
-            if (norm > 1.0f) norm = 1.0f;
-            if (norm < 0.05f && soundLevel > 0) {
-                norm = (float)soundLevel / maxBand;
-            }
-
-            uint8_t hue = (uint8_t)((band * 255) / AUDIO_BAND_COUNT);
-            uint8_t val = (uint8_t)(norm * state->brightness);
-            if (val < 4 && soundLevel > 0) {
-                val = (uint8_t)min((int)state->brightness, soundLevel / 2);
-            }
-
-            uint8_t r, g, b;
-            hsv_to_rgb(hue, 255, val, &r, &g, &b);
-
-            for (uint16_t i = 0; i < bandLen; i++) {
-                set_pixel_rgb(rgb, base + ringOffset + i, r, g, b);
-            }
-            ringOffset += bandLen;
+    const uint32_t beats = audio_input_get_beat_count();
+    const uint32_t now = millis();
+    if (beats != s_partyBeatSeen) {
+        s_partyBeatSeen = beats;
+        s_partyFlashMs = now;
+        s_partyHue += 26.0f;   /* salto de color por beat */
+    }
+    float flash = 0.0f;
+    if (s_partyFlashMs != 0U) {
+        const uint32_t since = now - s_partyFlashMs;
+        if (since < 160U) {
+            flash = 1.0f - ((float)since / 160.0f);
         }
+    }
+
+    s_partyHue += 0.15f + (s_partySm[1] / 400.0f) * 0.8f;
+    while (s_partyHue >= 256.0f) {
+        s_partyHue -= 256.0f;
+    }
+
+    for (int level = 0; level < LED_LEVEL_COUNT && level < 3; level++) {
+        float n = s_partySm[level] / 400.0f;
+        if (n > 1.0f) n = 1.0f;
+        float e = n * n;
+        if (level == 0) {
+            e += 0.55f * flash;
+        }
+        if (e > 1.0f) e = 1.0f;
+
+        uint8_t hue;
+        if (s_palette == 0U) {
+            hue = (uint8_t)((uint32_t)(s_partyHue + (float)level * 85.0f) & 0xFFU);
+        } else {
+            hue = kPaletteHues[s_palette][level];
+        }
+        const uint8_t val = (uint8_t)((float)state->brightness * (0.06f + 0.94f * e));
+
+        uint8_t r, g, b;
+        hsv_to_rgb(hue, 255, val, &r, &g, &b);
+        const uint16_t base = led_level_start((uint8_t)level);
+        for (uint16_t i = 0; i < LEDS_PER_LEVEL; i++) {
+            set_pixel_rgb(rgb, base + i, r, g, b);
+        }
+    }
+}
+
+/* Beat: toda la lampara salta de color en cada beat y pulsa con el nivel */
+static float s_beatLvlSm = 0.0f;
+static float s_beatHue = 0.0f;
+static uint8_t s_beatPalIdx = 0;
+static uint32_t s_beatSeen = 0;
+static uint32_t s_beatPulseMs = 0;
+
+static void fx_beat(lamp_state_t *state, uint8_t *rgb)
+{
+    const float tgt = (float)audio_input_get_norm_level();
+    s_beatLvlSm += (tgt - s_beatLvlSm) * ((tgt > s_beatLvlSm) ? 0.50f : 0.10f);
+
+    const uint32_t beats = audio_input_get_beat_count();
+    const uint32_t now = millis();
+    if (beats != s_beatSeen) {
+        s_beatSeen = beats;
+        s_beatPulseMs = now;
+        if (s_palette == 0U) {
+            s_beatHue += 47.0f;   /* paso aureo: recorre el circulo sin repetirse */
+            while (s_beatHue >= 256.0f) s_beatHue -= 256.0f;
+        } else {
+            s_beatPalIdx = (uint8_t)((s_beatPalIdx + 1U) % 3U);
+            s_beatHue = (float)kPaletteHues[s_palette][s_beatPalIdx];
+        }
+    }
+    float pulse = 0.0f;
+    if (s_beatPulseMs != 0U) {
+        const uint32_t since = now - s_beatPulseMs;
+        if (since < 220U) {
+            pulse = 1.0f - ((float)since / 220.0f);
+        }
+    }
+
+    float n = s_beatLvlSm / 400.0f;
+    if (n > 1.0f) n = 1.0f;
+    const float e = 0.14f + 0.50f * (n * n) + 0.36f * pulse;
+    const uint8_t val = (uint8_t)((float)state->brightness * ((e > 1.0f) ? 1.0f : e));
+
+    uint8_t r, g, b;
+    hsv_to_rgb((uint8_t)s_beatHue, 255, val, &r, &g, &b);
+    for (uint16_t idx = 0; idx < LED_COUNT; idx++) {
+        set_pixel_rgb(rgb, idx, r, g, b);
     }
 }
 
@@ -257,10 +348,11 @@ static void flag_base_rgb(flag_zone_t zone, uint8_t *r, uint8_t *g, uint8_t *b)
 static void fx_flag_colombia(lamp_state_t *state, uint8_t *rgb)
 {
     /* Las tres señales salen del mismo pipeline AGC (norm_*): misma escala
-     * con mic o radio, sin depender del slider de sensibilidad */
-    const float tgtLvl = (float)audio_input_get_norm_level();
-    const float tgtBass = (float)audio_input_get_norm_bass();
-    const float tgtHigh = (float)audio_input_get_norm_high();
+     * con mic o radio, sin depender del slider de sensibilidad.
+     * x1.15 = +15% de sensibilidad a pedido del usuario (clamp en norm01). */
+    const float tgtLvl = (float)audio_input_get_norm_level() * 1.15f;
+    const float tgtBass = (float)audio_input_get_norm_bass() * 1.15f;
+    const float tgtHigh = (float)audio_input_get_norm_high() * 1.15f;
 
     s_flagLvlSm += (tgtLvl - s_flagLvlSm) * (tgtLvl > s_flagLvlSm ? 0.45f : 0.10f);
     s_flagBassSm += (tgtBass - s_flagBassSm) * (tgtBass > s_flagBassSm ? 0.65f : 0.12f);
@@ -401,6 +493,12 @@ void music_effects_reset(void)
     s_flagHighSm = 0.0f;
     s_flagBeatSeen = audio_input_get_beat_count();
     s_flagFlashMs = 0;
+    s_partySm[0] = s_partySm[1] = s_partySm[2] = 0.0f;
+    s_partyBeatSeen = audio_input_get_beat_count();
+    s_partyFlashMs = 0;
+    s_beatLvlSm = 0.0f;
+    s_beatSeen = audio_input_get_beat_count();
+    s_beatPulseMs = 0;
 }
 
 void music_effects_update(lamp_state_t *state)
@@ -420,6 +518,7 @@ void music_effects_update(lamp_state_t *state)
         case MUSIC_FX_WAVE:   fx_flag_colombia(state, rgb); break;
         case MUSIC_FX_BREATH: fx_breath(state, rgb); break;
         case MUSIC_FX_STROBE: fx_strobe(state, rgb); break;
+        case MUSIC_FX_BEAT:   fx_beat(state, rgb); break;
         case MUSIC_FX_SOLID:  fx_solid_music(state, rgb); break;
         default: return;
     }

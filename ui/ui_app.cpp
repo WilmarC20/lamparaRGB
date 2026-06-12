@@ -35,7 +35,7 @@
 
 static lamp_state_t appState;
 static lamp_ui_persist_t s_uiPersist = {
-    UI_TAB_COLOR, 200, false, 50, false, 0
+    UI_TAB_COLOR, 200, false, 50, false, 0, 0, 0
 };
 static bool s_storeLoaded = false;
 static bool s_savePending = false;
@@ -576,6 +576,26 @@ static void on_timer_row_clicked(lv_event_t *e)
     ui_app_request_save();
 }
 
+static void on_sunrise_row_clicked(lv_event_t *e)
+{
+    if (lv_event_get_code(e) != LV_EVENT_CLICKED) {
+        return;
+    }
+    ui_settings_sunrise_cycle();
+    ui_config_refresh_sunrise_label();
+    ui_app_request_save();
+}
+
+static void on_palette_row_clicked(lv_event_t *e)
+{
+    if (lv_event_get_code(e) != LV_EVENT_CLICKED) {
+        return;
+    }
+    music_effects_set_palette((uint8_t)((music_effects_get_palette() + 1U) % 4U));
+    ui_config_refresh_palette_label();
+    ui_app_request_save();
+}
+
 static void on_night_mode_changed(lv_event_t *e)
 {
     if (syncingUi || lv_event_get_code(e) != LV_EVENT_VALUE_CHANGED) {
@@ -643,6 +663,14 @@ static void bind_config_events(void)
     if (timerRow) {
         lv_obj_add_event_cb(timerRow, on_timer_row_clicked, LV_EVENT_CLICKED, NULL);
     }
+    lv_obj_t *sunriseRow = ui_config_get_sunrise_row();
+    if (sunriseRow) {
+        lv_obj_add_event_cb(sunriseRow, on_sunrise_row_clicked, LV_EVENT_CLICKED, NULL);
+    }
+    lv_obj_t *paletteRow = ui_config_get_palette_row();
+    if (paletteRow) {
+        lv_obj_add_event_cb(paletteRow, on_palette_row_clicked, LV_EVENT_CLICKED, NULL);
+    }
     lv_obj_t *nightSw = ui_config_get_night_switch();
     if (nightSw) {
         lv_obj_add_event_cb(nightSw, on_night_mode_changed, LV_EVENT_VALUE_CHANGED, NULL);
@@ -693,6 +721,8 @@ static void ui_app_collect_ui_persist(lamp_ui_persist_t *ui)
     ui->micSensPct = s_micSensPct;
     ui->nightMode = ui_settings_get_night_mode();
     ui->timerPresetIdx = ui_settings_get_timer_preset_idx();
+    ui->musicPalette = music_effects_get_palette();
+    ui->sunriseIdx = ui_settings_get_sunrise_idx();
 }
 
 static void ui_app_flush_save(void)
@@ -1166,7 +1196,9 @@ void ui_app_setup(void)
     bind_control_events();
     ui_settings_init();
     if (s_storeLoaded) {
-        ui_settings_restore(s_uiPersist.nightMode, s_uiPersist.timerPresetIdx);
+        ui_settings_restore(s_uiPersist.nightMode, s_uiPersist.timerPresetIdx,
+                            s_uiPersist.sunriseIdx);
+        music_effects_set_palette(s_uiPersist.musicPalette);
         onConfigScreen = (s_uiPersist.activeTab == UI_TAB_SETTINGS);
         ui_set_active_tab(s_uiPersist.activeTab);
     }
@@ -1175,6 +1207,8 @@ void ui_app_setup(void)
         ui_config_set_mic_sensitivity_pct(s_micSensPct);
         ui_config_sync_night_switch(s_uiPersist.nightMode);
         ui_config_refresh_timer_label();
+        ui_config_refresh_sunrise_label();
+        ui_config_refresh_palette_label();
     }
     display_set_backlight(appState.power);
 
@@ -1304,11 +1338,36 @@ void ui_app_loop(void)
 
     lv_timer_handler();
 
-    if (!appState.power) {
-        uint16_t tx = 0;
-        uint16_t ty = 0;
-        if (touch_cst820_read_screen(&tx, &ty)) {
-            ui_app_wake_from_touch();
+    {
+        /* Despertar con toque; segundo toque en <700 ms = luz de noche calida */
+        static bool s_touchWasDown = false;
+        static uint32_t s_wakeMs = 0;
+        const uint32_t nowMs = millis();
+        if (!appState.power || (s_wakeMs != 0 && (nowMs - s_wakeMs) < 700U)) {
+            uint16_t tx = 0;
+            uint16_t ty = 0;
+            const bool down = touch_cst820_read_screen(&tx, &ty);
+            if (down && !s_touchWasDown) {
+                if (!appState.power) {
+                    ui_app_wake_from_touch();
+                    s_wakeMs = nowMs;
+                } else {
+                    appState.musicMode = false;
+                    appState.musicFx = MUSIC_FX_NONE;
+                    appState.effect = LAMP_EFFECT_SOLID;
+                    appState.hue = 35;
+                    appState.saturation = 150;
+                    appState.brightness = 50;
+                    lamp_state_mark_dirty(&appState);
+                    apply_and_report();
+                    ui_app_sync_from_state();
+                    s_wakeMs = 0;
+                }
+            }
+            s_touchWasDown = down;
+        } else {
+            s_touchWasDown = false;
+            s_wakeMs = 0;
         }
     }
 
@@ -1335,7 +1394,23 @@ void ui_app_loop(void)
         }
     }
     {
+        /* Mini-VU del header (~8 fps, solo con modo musical activo) */
+        static uint32_t s_lastVuMs = 0;
+        const uint32_t nowMs = millis();
+        if ((nowMs - s_lastVuMs) >= 120U) {
+            s_lastVuMs = nowMs;
+            if (lamp_state_music_active(&appState) && appState.power &&
+                (audio_input_is_running() || audio_input_external_active())) {
+                ui_update_header_vu((audio_input_get_norm_level() * 100) / 400);
+            } else {
+                ui_update_header_vu(-1);
+            }
+        }
+    }
+
+    {
         static uint32_t s_lastSettingsMs = 0;
+        static uint32_t s_lastLoudMs = 0;
         const uint32_t nowMs = millis();
         if ((nowMs - s_lastSettingsMs) >= 1000U) {
             s_lastSettingsMs = nowMs;
@@ -1343,6 +1418,21 @@ void ui_app_loop(void)
             if (ui_settings_service(&appState)) {
                 apply_and_report();
                 ui_app_sync_from_state();
+            }
+
+            /* Auto-reposo: 5 min de silencio en modo musical -> efecto fijo
+             * (Colombia musical cae a su version estatica) */
+            if (lamp_state_music_active(&appState) && appState.power) {
+                if (audio_input_get_norm_level() >= 60 || s_lastLoudMs == 0) {
+                    s_lastLoudMs = nowMs;
+                } else if ((nowMs - s_lastLoudMs) >= 300000U) {
+                    s_lastLoudMs = 0;
+                    ui_app_set_music_mode(false);
+                    apply_and_report();
+                    ui_app_sync_from_state();
+                }
+            } else {
+                s_lastLoudMs = 0;
             }
         }
     }

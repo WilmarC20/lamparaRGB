@@ -5,6 +5,7 @@
 #include "ui_theme.h"
 #include "lampara_ui.h"
 #include "audio_input.h"
+#include "music_effects.h"
 #include "lvgl.h"
 #include <stdio.h>
 
@@ -22,6 +23,10 @@ static lv_obj_t *s_micSensBar = NULL;
 static lv_obj_t *s_micSensLevelLbl = NULL;
 static lv_obj_t *s_timerRow = NULL;
 static lv_obj_t *s_timerVal = NULL;
+static lv_obj_t *s_sunriseRow = NULL;
+static lv_obj_t *s_sunriseVal = NULL;
+static lv_obj_t *s_paletteRow = NULL;
+static lv_obj_t *s_paletteVal = NULL;
 static lv_obj_t *s_speakerRow = NULL;
 static lv_obj_t *s_nightSw = NULL;
 
@@ -191,6 +196,16 @@ lv_obj_t *ui_settings_tab_build(lv_obj_t *parent)
                                    "Temporizador", &s_timerVal, 36, true, true);
     ui_config_refresh_timer_label();
 
+    /* Amanecer: rampa calida de 15 min terminando a la hora elegida */
+    s_sunriseRow = make_settings_row(list, LV_SYMBOL_UP, 0xFFD500,
+                                     "Amanecer", &s_sunriseVal, 36, true, true);
+    ui_config_refresh_sunrise_label();
+
+    /* Paleta de colores para Fiesta/Beat */
+    s_paletteRow = make_settings_row(list, LV_SYMBOL_TINT, 0xFF6B9D,
+                                     "Paleta musical", &s_paletteVal, 36, true, true);
+    ui_config_refresh_palette_label();
+
 #if ENABLE_SPEAKER
     s_speakerRow = make_settings_row(list, LV_SYMBOL_VOLUME_MAX, 0x00CCCC,
                                      "Probar altavoz", NULL, 36, false, true);
@@ -349,6 +364,34 @@ void ui_config_update_mic_sensitivity_meter(int sound_level, int music_level)
 lv_obj_t *ui_config_get_timer_row(void)
 {
     return s_timerRow;
+}
+
+lv_obj_t *ui_config_get_sunrise_row(void)
+{
+    return s_sunriseRow;
+}
+
+lv_obj_t *ui_config_get_palette_row(void)
+{
+    return s_paletteRow;
+}
+
+void ui_config_refresh_sunrise_label(void)
+{
+    if (!s_sunriseVal) {
+        return;
+    }
+    char buf[12];
+    ui_settings_format_sunrise_label(buf, sizeof(buf));
+    lv_label_set_text(s_sunriseVal, buf);
+}
+
+void ui_config_refresh_palette_label(void)
+{
+    if (!s_paletteVal) {
+        return;
+    }
+    lv_label_set_text(s_paletteVal, music_effects_palette_name(music_effects_get_palette()));
 }
 
 lv_obj_t *ui_config_get_speaker_row(void)

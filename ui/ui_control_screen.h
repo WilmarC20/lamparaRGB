@@ -21,6 +21,8 @@ bool ui_is_settings_tab(void);
 bool ui_is_radio_tab(void);
 void ui_update_brightness_label(uint8_t brightness);
 void ui_update_speed_label(uint8_t pct);
+/** Mini-VU del header: 0-100 muestra nivel, negativo lo oculta */
+void ui_update_header_vu(int pct);
 typedef enum {
     UI_WIFI_DISCONNECTED = 0,
     UI_WIFI_CONNECTING,

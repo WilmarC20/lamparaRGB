@@ -6,7 +6,9 @@
 
 #define LAMP_STORE_NS     "lampv3"
 #define LAMP_STORE_MAGIC  0x4C503033U
-#define LAMP_STORE_VER    2U
+/* v3: MUSIC_FX_BEAT insertado antes de SOLID (migra musicFx 7->8) +
+ * claves palette y sunrise */
+#define LAMP_STORE_VER    3U
 
 static bool clamp_state(lamp_state_t *state)
 {
@@ -39,6 +41,12 @@ static void clamp_ui(lamp_ui_persist_t *ui)
     if (ui->timerPresetIdx > 4U) {
         ui->timerPresetIdx = 0U;
     }
+    if (ui->musicPalette > 3U) {
+        ui->musicPalette = 0U;
+    }
+    if (ui->sunriseIdx > 4U) {
+        ui->sunriseIdx = 0U;
+    }
 }
 
 /* Copia de lo ultimo persistido: evita reescribir NVS (desgaste de flash)
@@ -62,7 +70,9 @@ static bool storage_same(const lamp_state_t *state, const lamp_ui_persist_t *ui)
            s_lastUi.effectReverse == ui->effectReverse &&
            s_lastUi.micSensPct == ui->micSensPct &&
            s_lastUi.nightMode == ui->nightMode &&
-           s_lastUi.timerPresetIdx == ui->timerPresetIdx;
+           s_lastUi.timerPresetIdx == ui->timerPresetIdx &&
+           s_lastUi.musicPalette == ui->musicPalette &&
+           s_lastUi.sunriseIdx == ui->sunriseIdx;
 }
 
 static void storage_remember(const lamp_state_t *state, const lamp_ui_persist_t *ui)
@@ -85,7 +95,7 @@ bool lamp_storage_load(lamp_state_t *state, lamp_ui_persist_t *ui)
 
     const uint32_t magic = prefs.getUInt("magic", 0U);
     const uint32_t ver = prefs.getUInt("ver", 0U);
-    if (magic != LAMP_STORE_MAGIC || (ver != LAMP_STORE_VER && ver != 1U)) {
+    if (magic != LAMP_STORE_MAGIC || ver < 1U || ver > LAMP_STORE_VER) {
         prefs.end();
         return false;
     }
@@ -96,6 +106,10 @@ bool lamp_storage_load(lamp_state_t *state, lamp_ui_persist_t *ui)
     state->saturation = (uint8_t)prefs.getUChar("sat", 255U);
     state->effect = (lamp_effect_t)prefs.getUChar("effect", (uint8_t)LAMP_EFFECT_SOLID);
     state->musicFx = (music_fx_t)prefs.getUChar("musicFx", (uint8_t)MUSIC_FX_NONE);
+    if (ver < 3U && (uint8_t)state->musicFx == 7U) {
+        /* v2: 7 era SOLID; en v3 BEAT ocupa el 7 y SOLID paso al 8 */
+        state->musicFx = MUSIC_FX_SOLID;
+    }
     if (ver >= 2U) {
         state->musicMode = prefs.getBool("musicMode", false);
     } else {
@@ -109,6 +123,8 @@ bool lamp_storage_load(lamp_state_t *state, lamp_ui_persist_t *ui)
     ui->micSensPct = (uint8_t)prefs.getUChar("micPct", 50U);
     ui->nightMode = prefs.getBool("night", false);
     ui->timerPresetIdx = (uint8_t)prefs.getUChar("timerIdx", 0U);
+    ui->musicPalette = (uint8_t)prefs.getUChar("palette", 0U);
+    ui->sunriseIdx = (uint8_t)prefs.getUChar("sunrise", 0U);
 
     prefs.end();
     clamp_state(state);
@@ -146,6 +162,8 @@ void lamp_storage_save(const lamp_state_t *state, const lamp_ui_persist_t *ui)
     prefs.putUChar("micPct", ui->micSensPct);
     prefs.putBool("night", ui->nightMode);
     prefs.putUChar("timerIdx", ui->timerPresetIdx);
+    prefs.putUChar("palette", ui->musicPalette);
+    prefs.putUChar("sunrise", ui->sunriseIdx);
     prefs.end();
     storage_remember(state, ui);
 }

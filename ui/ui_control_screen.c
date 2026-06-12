@@ -35,6 +35,8 @@ static lv_obj_t *s_effectColorBar = NULL;
 static lv_obj_t *s_effectColorDots[7];
 static lv_obj_t *s_btnDirLeft = NULL;
 static lv_obj_t *s_btnDirRight = NULL;
+static lv_obj_t *s_vuBar = NULL;
+static lv_obj_t *s_vuFill = NULL;
 static lv_obj_t *s_lblBrilloPct = NULL;
 static lv_obj_t *s_lblVelPct = NULL;
 static lv_obj_t *s_lblSettingsBrillo = NULL;
@@ -350,7 +352,7 @@ static void build_color_tab(lv_obj_t *parent)
     ui_SliderBrillo = lv_slider_create(brPanel);
     lv_slider_set_range(ui_SliderBrillo, 0, 255);
     lv_slider_set_value(ui_SliderBrillo, 128, LV_ANIM_OFF);
-    lv_obj_set_width(ui_SliderBrillo, 168);
+    lv_obj_set_width(ui_SliderBrillo, 163);
     lv_obj_align(ui_SliderBrillo, LV_ALIGN_BOTTOM_MID, 0, 0);
     ui_style_slider(ui_SliderBrillo);
 
@@ -519,21 +521,36 @@ static void build_effects_color_panel(lv_obj_t *parent)
 
 void ui_update_effect_color_bar(uint16_t effect_idx, uint16_t hue, uint8_t sat)
 {
+    const ui_fx_color_mode_t mode = ui_effect_color_mode(effect_idx);
+
+    uint16_t hues[UI_EFFECT_COLOR_SEGMENTS];
+    uint8_t count = 0;
+    ui_effect_color_stops(effect_idx, hue, sat, hues, &count, UI_EFFECT_COLOR_SEGMENTS);
+
+    /* VU de borde: degradado vertical con los colores del efecto activo.
+     * Se actualiza siempre, incluso si la pestaña Efectos no fue abierta
+     * todavia (s_effectColorBar se construye lazy). */
+    if (s_vuFill && count > 0) {
+        const uint8_t vuSat = (mode == UI_FX_COLOR_RAINBOW) ? 255 : sat;
+        const lv_color_t top = ui_color_from_hue_sat(hues[0], vuSat);
+        const lv_color_t bottom = ui_color_from_hue_sat(hues[count - 1], vuSat);
+        lv_obj_set_style_bg_color(s_vuFill, top, LV_PART_MAIN);
+        lv_obj_set_style_bg_grad_color(s_vuFill, bottom, LV_PART_MAIN);
+        lv_obj_set_style_bg_grad_dir(s_vuFill,
+                                     (count > 1) ? LV_GRAD_DIR_VER : LV_GRAD_DIR_NONE,
+                                     LV_PART_MAIN);
+    }
+
     if (!s_effectColorBar) {
         return;
     }
 
-    const ui_fx_color_mode_t mode = ui_effect_color_mode(effect_idx);
     const bool editable = (mode != UI_FX_COLOR_RAINBOW);
     if (editable) {
         lv_obj_add_flag(s_effectColorBar, LV_OBJ_FLAG_CLICKABLE);
     } else {
         lv_obj_clear_flag(s_effectColorBar, LV_OBJ_FLAG_CLICKABLE);
     }
-
-    uint16_t hues[UI_EFFECT_COLOR_SEGMENTS];
-    uint8_t count = 0;
-    ui_effect_color_stops(effect_idx, hue, sat, hues, &count, UI_EFFECT_COLOR_SEGMENTS);
 
     for (int i = 0; i < UI_EFFECT_COLOR_SEGMENTS; i++) {
         if (!s_effectColorDots[i]) {
@@ -886,6 +903,57 @@ bool ui_is_radio_tab(void)
     return s_activeTab == UI_TAB_RADIO;
 }
 
+/* VU de borde: franja vertical pegada al lado izquierdo, 100% del alto,
+ * sube desde abajo con el nivel y toma los colores del efecto activo. */
+#define UI_VU_EDGE_W 4
+
+static void build_edge_vu(lv_obj_t *parent)
+{
+    s_vuBar = lv_obj_create(parent);
+    lv_obj_set_size(s_vuBar, UI_VU_EDGE_W, kScreenHeight);
+    lv_obj_set_pos(s_vuBar, 0, 0);
+    lv_obj_set_style_bg_color(s_vuBar, lv_color_hex(0x101016), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(s_vuBar, LV_OPA_40, LV_PART_MAIN);
+    lv_obj_set_style_border_width(s_vuBar, 0, LV_PART_MAIN);
+    lv_obj_set_style_radius(s_vuBar, 0, LV_PART_MAIN);
+    lv_obj_set_style_pad_all(s_vuBar, 0, LV_PART_MAIN);
+    lv_obj_clear_flag(s_vuBar, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_clear_flag(s_vuBar, LV_OBJ_FLAG_CLICKABLE);
+
+    s_vuFill = lv_obj_create(s_vuBar);
+    lv_obj_set_size(s_vuFill, UI_VU_EDGE_W, 4);
+    lv_obj_set_pos(s_vuFill, 0, kScreenHeight - 4);
+    lv_obj_set_style_bg_color(s_vuFill, lv_color_hex(UI_COLOR_ACCENT), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(s_vuFill, LV_OPA_80, LV_PART_MAIN);
+    lv_obj_set_style_border_width(s_vuFill, 0, LV_PART_MAIN);
+    lv_obj_set_style_radius(s_vuFill, 0, LV_PART_MAIN);
+    lv_obj_clear_flag(s_vuFill, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_clear_flag(s_vuFill, LV_OBJ_FLAG_CLICKABLE);
+
+    lv_obj_add_flag(s_vuBar, LV_OBJ_FLAG_HIDDEN);
+}
+
+void ui_update_header_vu(int pct)
+{
+    if (!s_vuBar || !s_vuFill) {
+        return;
+    }
+    if (pct < 0) {
+        lv_obj_add_flag(s_vuBar, LV_OBJ_FLAG_HIDDEN);
+        return;
+    }
+    if (pct > 100) {
+        pct = 100;
+    }
+    lv_obj_clear_flag(s_vuBar, LV_OBJ_FLAG_HIDDEN);
+    int h = ((int)kScreenHeight * pct) / 100;
+    if (h < 4) {
+        h = 4;
+    }
+    lv_obj_set_height(s_vuFill, h);
+    lv_obj_set_y(s_vuFill, (int)kScreenHeight - h);
+}
+
 void ui_update_brightness_label(uint8_t brightness)
 {
     if (!s_lblBrilloPct) return;
@@ -1125,6 +1193,8 @@ void ui_Control_screen_init(void)
     build_header(ui_Control);
     build_color_tab(ui_Control);
     build_nav_bar(ui_Control);
+    /* Ultimo: el VU de borde queda por encima de todo el layout */
+    build_edge_vu(ui_Control);
 
     ui_bind_deferred_callbacks();
 
